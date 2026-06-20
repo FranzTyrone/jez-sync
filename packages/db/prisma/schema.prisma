@@ -1,0 +1,186 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── AUTH ───────────────────────────────────────────────
+
+model User {
+  id                  String              @id @default(uuid())
+  email               String              @unique
+  name                String
+  passwordHash        String
+  emailVerified       Boolean             @default(false)
+  createdAt           DateTime            @default(now())
+  servers             ServerMember[]
+  messages            Message[]
+  assignedTasks       Task[]              @relation("assignedTasks")
+  sessions            Session[]
+  annotationSessions  AnnotationSession[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─── SERVERS ────────────────────────────────────────────
+
+model Server {
+  id        String         @id @default(uuid())
+  name      String
+  iconUrl   String?
+  ownerId   String
+  createdAt DateTime       @default(now())
+  members   ServerMember[]
+  channels  Channel[]
+  roles     Role[]
+  invites   Invite[]
+  boards    Board[]
+}
+
+model ServerMember {
+  id       String   @id @default(uuid())
+  userId   String
+  serverId String
+  roleId   String?
+  joinedAt DateTime @default(now())
+  user     User     @relation(fields: [userId], references: [id])
+  server   Server   @relation(fields: [serverId], references: [id])
+  role     Role?    @relation(fields: [roleId], references: [id])
+  @@unique([userId, serverId])
+  @@index([serverId])
+}
+
+model Role {
+  id                 String         @id @default(uuid())
+  name               String
+  serverId           String
+  color              String?
+  canManageServer    Boolean        @default(false)
+  canManageChannels  Boolean        @default(false)
+  canManageRoles     Boolean        @default(false)
+  canInviteUsers     Boolean        @default(false)
+  canManageBoards    Boolean        @default(false)
+  canJoinVoice       Boolean        @default(true)
+  canSendMessages    Boolean        @default(true)
+  canMuteMembers     Boolean        @default(false)
+  canKickMembers     Boolean        @default(false)
+  canAnnotate        Boolean        @default(true)
+  isAdmin            Boolean        @default(false)
+  server             Server         @relation(fields: [serverId], references: [id])
+  members            ServerMember[]
+}
+
+model Invite {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  serverId  String
+  createdBy String
+  maxUses   Int?
+  useCount  Int       @default(0)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  server    Server    @relation(fields: [serverId], references: [id])
+}
+
+// ─── CHANNELS ───────────────────────────────────────────
+
+model Channel {
+  id                  String              @id @default(uuid())
+  name                String
+  type                ChannelType
+  serverId            String
+  position            Int                 @default(0)
+  createdAt           DateTime            @default(now())
+  server              Server              @relation(fields: [serverId], references: [id])
+  messages            Message[]
+  annotationSessions  AnnotationSession[]
+  @@index([serverId, position])
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  authorId  String
+  channelId String
+  taskId    String?
+  createdAt DateTime @default(now())
+  author    User     @relation(fields: [authorId], references: [id])
+  channel   Channel  @relation(fields: [channelId], references: [id])
+  task      Task?    @relation(fields: [taskId], references: [id])
+  @@index([channelId, createdAt])
+}
+
+// ─── PROJECT BOARDS ─────────────────────────────────────
+
+model Board {
+  id        String   @id @default(uuid())
+  name      String
+  serverId  String
+  createdAt DateTime @default(now())
+  server    Server   @relation(fields: [serverId], references: [id])
+  columns   Column[]
+  tasks     Task[]
+  @@index([serverId])
+}
+
+model Column {
+  id       String @id @default(uuid())
+  name     String
+  boardId  String
+  position Int    @default(0)
+  board    Board  @relation(fields: [boardId], references: [id])
+  tasks    Task[]
+  @@index([boardId, position])
+}
+
+model Task {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  priority    Priority  @default(MEDIUM)
+  boardId     String
+  columnId    String
+  assigneeId  String?
+  position    Int       @default(0)
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  board       Board     @relation(fields: [boardId], references: [id])
+  column      Column    @relation(fields: [columnId], references: [id])
+  assignee    User?     @relation("assignedTasks", fields: [assigneeId], references: [id])
+  messages    Message[]
+  @@index([boardId, columnId, position])
+}
+
+// ─── ANNOTATION ─────────────────────────────────────────
+
+model AnnotationSession {
+  id          String    @id @default(uuid())
+  channelId   String
+  sharerId    String
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  strokeCount Int       @default(0)
+  channel     Channel   @relation(fields: [channelId], references: [id])
+  sharer      User      @relation(fields: [sharerId], references: [id])
+  @@index([channelId])
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
