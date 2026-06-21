@@ -195,6 +195,7 @@ export default function VoiceChannel({ channelId }: Props) {
   const [localCamStream, setLocalCamStream] = useState<MediaStream | null>(null);
   const [camStreams, setCamStreams] = useState<Map<string, MediaStream>>(new Map());
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const { data: session } = useSession();
@@ -383,6 +384,7 @@ export default function VoiceChannel({ channelId }: Props) {
     consumersRef.current.forEach((c) => c.close());
     consumersRef.current.clear();
     localCamStream?.getTracks().forEach((t) => t.stop());
+    localScreenStream?.getTracks().forEach((t) => t.stop());
     if (audioContainerRef.current) audioContainerRef.current.innerHTML = "";
     resetSocket();
     setConnected(false);
@@ -395,6 +397,7 @@ export default function VoiceChannel({ channelId }: Props) {
     setLocalCamStream(null);
     setCamStreams(new Map());
     setScreenStream(null);
+    setLocalScreenStream(null);
     camProducerRef.current = null;
   }
 
@@ -492,6 +495,7 @@ export default function VoiceChannel({ channelId }: Props) {
 
       const producer = await screenTransport.produce({ track: videoTrack });
       screenProducerRef.current = producer;
+      setLocalScreenStream(stream);
       setIsSharing(true);
       setIsSharer(true);
       socket.emit("annotation:start", { channelId });
@@ -505,8 +509,10 @@ export default function VoiceChannel({ channelId }: Props) {
     if (screenProducerRef.current) {
       socket.emit("voice:closeProducer", { channelId, producerId: screenProducerRef.current.id });
     }
+    localScreenStream?.getTracks().forEach((t) => t.stop());
     screenProducerRef.current = null;
     setScreenStream(null);
+    setLocalScreenStream(null);
     setIsSharing(false);
     setIsSharer(false);
     setIsWatchingShare(false);
@@ -609,19 +615,72 @@ export default function VoiceChannel({ channelId }: Props) {
       <div
         style={{
           background: C.bg,
-          borderRadius: 14,
-          border: `1px solid ${C.border}`,
-          minHeight: 280,
+          borderRadius: 0,
+          border: "none",
+          flex: 1,
+          width: "100%",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           gap: 0,
-          marginBottom: "1rem",
           position: "relative",
           overflow: "hidden",
         }}
       >
+        {/* Ocean wave layers */}
+        <svg
+          style={{ position: "absolute", bottom: 0, left: 0, width: "100%", height: "45%", pointerEvents: "none" }}
+          viewBox="0 0 1200 300"
+          preserveAspectRatio="none"
+        >
+          <path
+            d="M0,150 C200,200 400,100 600,150 C800,200 1000,100 1200,150 L1200,300 L0,300 Z"
+            fill="rgba(99,102,241,0.05)"
+          >
+            <animate
+              attributeName="d"
+              dur="8s"
+              repeatCount="indefinite"
+              values="
+                M0,150 C200,200 400,100 600,150 C800,200 1000,100 1200,150 L1200,300 L0,300 Z;
+                M0,160 C200,110 400,210 600,160 C800,110 1000,210 1200,160 L1200,300 L0,300 Z;
+                M0,150 C200,200 400,100 600,150 C800,200 1000,100 1200,150 L1200,300 L0,300 Z
+              "
+            />
+          </path>
+          <path
+            d="M0,180 C300,130 600,230 900,180 C1050,155 1150,200 1200,180 L1200,300 L0,300 Z"
+            fill="rgba(99,102,241,0.08)"
+          >
+            <animate
+              attributeName="d"
+              dur="11s"
+              repeatCount="indefinite"
+              values="
+                M0,180 C300,130 600,230 900,180 C1050,155 1150,200 1200,180 L1200,300 L0,300 Z;
+                M0,190 C300,235 600,135 900,190 C1050,215 1150,165 1200,190 L1200,300 L0,300 Z;
+                M0,180 C300,130 600,230 900,180 C1050,155 1150,200 1200,180 L1200,300 L0,300 Z
+              "
+            />
+          </path>
+          <path
+            d="M0,210 C250,250 500,170 750,210 C950,240 1100,190 1200,210 L1200,300 L0,300 Z"
+            fill="rgba(99,102,241,0.12)"
+          >
+            <animate
+              attributeName="d"
+              dur="6.5s"
+              repeatCount="indefinite"
+              values="
+                M0,210 C250,250 500,170 750,210 C950,240 1100,190 1200,210 L1200,300 L0,300 Z;
+                M0,220 C250,180 500,260 750,220 C950,195 1100,250 1200,220 L1200,300 L0,300 Z;
+                M0,210 C250,250 500,170 750,210 C950,240 1100,190 1200,210 L1200,300 L0,300 Z
+              "
+            />
+          </path>
+        </svg>
+
         {/* Subtle ambient glow */}
         <div
           style={{
@@ -706,7 +765,7 @@ export default function VoiceChannel({ channelId }: Props) {
   }
 
   // ─── Connected view ───────────────────────────────────────────────────────────
-  const hasScreenContent = screenStream || isWatchingShare || canAnnotate;
+  const hasScreenContent = screenStream || localScreenStream || isWatchingShare || canAnnotate;
 
   return (
     <div
@@ -714,13 +773,15 @@ export default function VoiceChannel({ channelId }: Props) {
       onMouseLeave={() => setShowControls(false)}
       style={{
         background: C.bg,
-        borderRadius: 14,
-        border: `1px solid ${C.border}`,
+        borderRadius: 0,
+        border: "none",
         padding: 14,
         paddingBottom: 88,
-        marginBottom: "1rem",
         position: "relative",
-        minHeight: 300,
+        flex: 1,
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       {/* Participant tiles */}
@@ -731,6 +792,7 @@ export default function VoiceChannel({ channelId }: Props) {
           gap: 10,
           justifyContent: "center",
           alignItems: "flex-start",
+          marginBottom: hasScreenContent ? 10 : 0,
         }}
       >
         {/* Self tile */}
@@ -828,80 +890,81 @@ export default function VoiceChannel({ channelId }: Props) {
             </div>
           );
         })}
+      </div>
 
-        {/* Screen share area */}
-        {hasScreenContent && (
-          <div
-            ref={screenContainerRef}
-            style={{
-              flexBasis: "100%",
-              background: "#000",
-              borderRadius: isFullscreen ? 0 : 10,
-              border: isFullscreen ? "none" : `1px solid ${C.border}`,
-              position: "relative",
-              width: "100%",
-              height: isFullscreen ? "100vh" : "auto",
-              aspectRatio: isFullscreen ? "auto" : "16/9",
-              maxHeight: isFullscreen ? "none" : "70vh",
-              overflow: "hidden",
-            }}
-          >
-            {screenStream && (
-              <video
-                ref={(el) => {
-                  if (el && el.srcObject !== screenStream) el.srcObject = screenStream;
-                }}
-                autoPlay
-                playsInline
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                  display: "block",
-                }}
-              />
-            )}
-            <div style={{ position: "absolute", inset: 0 }}>
-              <AnnotationCanvas
-                channelId={channelId}
-                canDraw={canAnnotate && !isSharer}
-                myColor={myColor}
-                myUserId={session?.user?.id || "unknown"}
-                containerWidth={640}
-                containerHeight={360}
-              />
-            </div>
-            {/* Fullscreen toggle */}
-            <button
-              onClick={toggleFullscreen}
-              title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+      {/* Screen share area */}
+      {hasScreenContent && (
+        <div
+          ref={screenContainerRef}
+          style={{
+            background: "#000",
+            borderRadius: isFullscreen ? 0 : 10,
+            border: isFullscreen ? "none" : `1px solid ${C.border}`,
+            position: "relative",
+            width: "100%",
+            height: isFullscreen ? "100vh" : "auto",
+            aspectRatio: isFullscreen ? "auto" : "16/9",
+            maxHeight: isFullscreen ? "none" : "70vh",
+            overflow: "hidden",
+          }}
+        >
+          {(screenStream || localScreenStream) && (
+            <video
+              ref={(el) => {
+                const src = screenStream || localScreenStream;
+                if (el && el.srcObject !== src) el.srcObject = src;
+              }}
+              autoPlay
+              playsInline
+              muted={isSharer}
               style={{
                 position: "absolute",
-                top: 10,
-                right: 10,
-                width: 34,
-                height: 34,
-                borderRadius: 8,
-                border: `1px solid ${C.border}`,
-                background: "#0d1117cc",
-                backdropFilter: "blur(8px)",
-                WebkitBackdropFilter: "blur(8px)",
-                color: C.textPrimary,
-                fontSize: 14,
-                cursor: "pointer",
-                zIndex: 5,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                display: "block",
               }}
-            >
-              {isFullscreen ? "✕" : "⛶"}
-            </button>
+            />
+          )}
+          <div style={{ position: "absolute", inset: 0 }}>
+            <AnnotationCanvas
+              channelId={channelId}
+              canDraw={canAnnotate && !isSharer}
+              myColor={myColor}
+              myUserId={session?.user?.id || "unknown"}
+              containerWidth={640}
+              containerHeight={360}
+            />
           </div>
-        )}
-      </div>
+          {/* Fullscreen toggle */}
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            style={{
+              position: "absolute",
+              top: 10,
+              right: 10,
+              width: 34,
+              height: 34,
+              borderRadius: 8,
+              border: `1px solid ${C.border}`,
+              background: "#0d1117cc",
+              backdropFilter: "blur(8px)",
+              WebkitBackdropFilter: "blur(8px)",
+              color: C.textPrimary,
+              fontSize: 14,
+              cursor: "pointer",
+              zIndex: 5,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {isFullscreen ? "✕" : "⛶"}
+          </button>
+        </div>
+      )}
 
       {/* Request to annotate */}
       {isWatchingShare && !isSharer && (

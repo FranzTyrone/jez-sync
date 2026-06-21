@@ -33,6 +33,17 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
 
   const [servers, setServers] = useState<ServerWithChannels[]>([]);
   const [voiceParticipants, setVoiceParticipants] = useState<Record<string, VoiceParticipant[]>>({});
+  const [isMobile, setIsMobile] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    function checkSize() {
+      setIsMobile(window.innerWidth < 768);
+    }
+    checkSize();
+    window.addEventListener("resize", checkSize);
+    return () => window.removeEventListener("resize", checkSize);
+  }, []);
 
   useEffect(() => {
     if (!session?.user?.id) return;
@@ -122,17 +133,67 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
       .toUpperCase();
   }
 
-return (
-    <div style={{ display: "flex", fontFamily: "'Segoe UI', sans-serif", height: "100vh", overflow: "hidden" }}>
+  function navigateAndClose(path: string) {
+    router.push(path);
+    if (isMobile) setDrawerOpen(false);
+  }
+
+  const showSidebar = !isMobile || drawerOpen;
+
+  return (
+    <div style={{ display: "flex", fontFamily: "'Segoe UI', sans-serif", height: "100vh", overflow: "hidden", position: "relative" }}>
+      {isMobile && (
+        <button
+          onClick={() => setDrawerOpen(true)}
+          style={{
+            position: "fixed",
+            top: "12px",
+            left: "12px",
+            zIndex: 40,
+            width: "38px",
+            height: "38px",
+            borderRadius: "8px",
+            border: "none",
+            background: "#0b1830",
+            color: "#fff",
+            fontSize: "18px",
+            cursor: "pointer",
+            display: showSidebar ? "none" : "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {"\u2630"}
+        </button>
+      )}
+
+      {isMobile && drawerOpen && (
+        <div
+          onClick={() => setDrawerOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 30,
+          }}
+        />
+      )}
+
       <div
         style={{
           width: "72px",
           background: "#0b1830",
-          display: "flex",
+          display: showSidebar ? "flex" : "none",
           flexDirection: "column",
           alignItems: "center",
           paddingTop: "16px",
           gap: "10px",
+          position: isMobile ? "fixed" : "static",
+          top: 0,
+          bottom: 0,
+          left: 0,
+          zIndex: isMobile ? 35 : "auto",
+          height: "100vh",
         }}
       >
         {servers.map((s) => {
@@ -141,7 +202,7 @@ return (
           return (
             <div
               key={s.id}
-              onClick={() => router.push(`/servers/${s.id}/channels/${s.channels[0]?.id}`)}
+              onClick={() => navigateAndClose(`/servers/${s.id}/channels/${s.channels[0]?.id}`)}
               title={s.name}
               style={{
                 width: "44px",
@@ -167,7 +228,7 @@ return (
         })}
 
         <div
-          onClick={() => router.push("/create-server")}
+          onClick={() => navigateAndClose("/create-server")}
           title="Create new server"
           style={{
             width: "44px",
@@ -190,12 +251,18 @@ return (
 
       <div
         style={{
-          width: "240px",
+          width: isMobile ? "260px" : "240px",
           background: "#11213f",
-          display: "flex",
+          display: showSidebar ? "flex" : "none",
           flexDirection: "column",
           color: "#e2e8f0",
           height: "100vh",
+          position: isMobile ? "fixed" : "static",
+          top: 0,
+          bottom: 0,
+          left: isMobile ? "72px" : "auto",
+          zIndex: isMobile ? 35 : "auto",
+          boxShadow: isMobile ? "4px 0 16px rgba(0,0,0,0.3)" : "none",
         }}
       >
         <div
@@ -204,9 +271,27 @@ return (
             borderBottom: "1px solid rgba(255,255,255,0.08)",
             fontWeight: 600,
             fontSize: "15px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          {currentServer?.name || "Loading..."}
+          <span>{currentServer?.name || "Loading..."}</span>
+          {isMobile && (
+            <button
+              onClick={() => setDrawerOpen(false)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#94a3b8",
+                fontSize: "18px",
+                cursor: "pointer",
+                padding: "4px",
+              }}
+            >
+              {"\u2715"}
+            </button>
+          )}
         </div>
 
         <div style={{ flex: 1, padding: "12px 8px", overflowY: "auto" }}>
@@ -227,7 +312,7 @@ return (
             return (
               <div key={c.id} style={{ marginBottom: "2px" }}>
                 <div
-                  onClick={() => router.push(`/servers/${serverId}/channels/${c.id}`)}
+                  onClick={() => navigateAndClose(`/servers/${serverId}/channels/${c.id}`)}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -350,7 +435,7 @@ return (
         </div>
       </div>
 
-      <div style={{ flex: 1, background: "#f4f5f7" }}>
+      <div style={{ flex: 1, background: "#f4f5f7", overflow: "auto", paddingTop: isMobile ? "56px" : 0 }}>
         <div key={`${serverId}`}>{children}</div>
       </div>
     </div>

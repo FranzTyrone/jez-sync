@@ -220,7 +220,7 @@ export default function ChannelPage() {
       )}
 
       {channelType === "VOICE" && (
-        <div style={{ padding: "16px 20px 0", background: "#0d1117", flex: 1 }}>
+        <div style={{ background: "#0d1117", flex: 1, display: "flex", overflow: "hidden" }}>
           <VoiceChannel channelId={channelId} />
         </div>
       )}
