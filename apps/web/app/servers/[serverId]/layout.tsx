@@ -435,8 +435,19 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
         </div>
       </div>
 
-      <div style={{ flex: 1, background: "#f4f5f7", overflow: "auto", paddingTop: isMobile ? "56px" : 0 }}>
-        <div key={`${serverId}`}>{children}</div>
+      <div
+        style={{
+          flex: 1,
+          background: "#0b1024",
+          overflow: "auto",
+          paddingTop: isMobile ? "56px" : 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <div key={`${serverId}`} style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          {children}
+        </div>
       </div>
     </div>
   );

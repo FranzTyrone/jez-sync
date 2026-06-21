@@ -124,7 +124,7 @@ export default function ChannelPage() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          height: "100vh",
+          height: "100%",
           fontFamily: "'Segoe UI', sans-serif",
           background: "#0d1117",
         }}
@@ -144,7 +144,8 @@ export default function ChannelPage() {
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "100vh",
+        height: "100%",
+        minHeight: 0,
         fontFamily: "'Segoe UI', sans-serif",
         background: "#0d1117",
       }}
@@ -157,6 +158,7 @@ export default function ChannelPage() {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          flexShrink: 0,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -213,6 +215,7 @@ export default function ChannelPage() {
             fontSize: "13px",
             color: "#10b981",
             wordBreak: "break-all",
+            flexShrink: 0,
           }}
         >
           {inviteUrl}
@@ -220,7 +223,15 @@ export default function ChannelPage() {
       )}
 
       {channelType === "VOICE" && (
-        <div style={{ background: "#0d1117", flex: 1, display: "flex", overflow: "hidden" }}>
+        <div
+          style={{
+            background: "#0d1117",
+            flex: 1,
+            display: "flex",
+            overflow: "hidden",
+            minHeight: 0,
+          }}
+        >
           <VoiceChannel channelId={channelId} />
         </div>
       )}
@@ -232,6 +243,7 @@ export default function ChannelPage() {
           padding: "16px 20px",
           background: "#0d1117",
           display: channelType === "VOICE" ? "none" : "block",
+          minHeight: 0,
         }}
       >
         {messages.length === 0 && (
@@ -314,6 +326,7 @@ export default function ChannelPage() {
             borderTop: "1px solid #252f42",
             display: "flex",
             gap: "10px",
+            flexShrink: 0,
           }}
         >
           <input
