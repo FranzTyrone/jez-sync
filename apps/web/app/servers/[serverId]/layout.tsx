@@ -295,6 +295,26 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
         </div>
 
         <div style={{ flex: 1, padding: "12px 8px", overflowY: "auto" }}>
+          <div
+            onClick={() => navigateAndClose(`/servers/${serverId}/board`)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "7px 8px",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontSize: "14px",
+              color: "#cbd5e1",
+              marginBottom: "4px",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
+            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+          >
+            <span style={{ color: "#64748b", fontSize: "15px" }}>⊞</span>
+            Board
+          </div>
+
           <p
             style={{
               fontSize: "11px",

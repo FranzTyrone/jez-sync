@@ -33,8 +33,39 @@ export default function Home() {
   }, [session, status, router]);
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <p>Loading Jez Sync...</p>
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#0d1117",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        gap: "20px",
+      }}
+    >
+      <div
+        style={{
+          width: "36px",
+          height: "36px",
+          borderRadius: "50%",
+          border: "2.5px solid #252f42",
+          borderTopColor: "#6366f1",
+          animation: "spin 0.75s linear infinite",
+        }}
+      />
+      <p
+        style={{
+          color: "#6b7280",
+          fontSize: "14px",
+          margin: 0,
+          letterSpacing: "0.01em",
+        }}
+      >
+        Jez Sync
+      </p>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </main>
   );
 }

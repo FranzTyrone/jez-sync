@@ -483,7 +483,7 @@ export default function VoiceChannel({ channelId }: Props) {
         try {
           const response = await emitWithAck("voice:produce", {
             channelId, transportId: screenTransport.id,
-            kind: params.kind, rtpParameters: params.rtpParameters,
+            kind: params.kind, rtpParameters: params.rtpParameters, appData: params.appData,
           });
           callback({ id: response.id });
         } catch (err) { errback(err as Error); }
@@ -493,7 +493,7 @@ export default function VoiceChannel({ channelId }: Props) {
       const videoTrack = stream.getVideoTracks()[0];
       videoTrack.onended = () => stopScreenShare();
 
-      const producer = await screenTransport.produce({ track: videoTrack });
+      const producer = await screenTransport.produce({ track: videoTrack, appData: { mediaTag: "screen" } });
       screenProducerRef.current = producer;
       setLocalScreenStream(stream);
       setIsSharing(true);
@@ -784,115 +784,116 @@ export default function VoiceChannel({ channelId }: Props) {
         flexDirection: "column",
       }}
     >
-      {/* Participant tiles */}
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 10,
-          justifyContent: "center",
-          alignItems: "flex-start",
-          marginBottom: hasScreenContent ? 10 : 0,
-        }}
-      >
-        {/* Self tile */}
+      {/* Participant tiles — only shown when not screen sharing */}
+      {!hasScreenContent && (
         <div
           style={{
-            background: tileColors[0],
-            borderRadius: 10,
-            border: `1px solid ${C.border}`,
-            aspectRatio: "16/9",
-            flex: "1 1 340px",
-            maxWidth: 520,
             display: "flex",
-            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 10,
             justifyContent: "center",
-            position: "relative",
-            overflow: "hidden",
+            alignItems: "flex-start",
           }}
         >
-          {localCamStream ? (
-            <video
-              ref={(el) => {
-                if (el && el.srcObject !== localCamStream) el.srcObject = localCamStream;
-              }}
-              autoPlay
-              playsInline
-              muted
-              style={{
-                position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                transform: "scaleX(-1)",
-              }}
-            />
-          ) : (
-            <Avatar name={session?.user?.name || "You"} />
-          )}
-          <NameTag>
-            {session?.user?.name ?? "You"}{" "}
-            {isDeafened ? "🔕" : isMuted ? "🔇" : ""}
-            {isPushToTalk && (
-              <span
+          {/* Self tile */}
+          <div
+            style={{
+              background: tileColors[0],
+              borderRadius: 10,
+              border: `1px solid ${C.border}`,
+              aspectRatio: "16/9",
+              flex: "1 1 340px",
+              maxWidth: 520,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              position: "relative",
+              overflow: "hidden",
+            }}
+          >
+            {localCamStream ? (
+              <video
+                ref={(el) => {
+                  if (el && el.srcObject !== localCamStream) el.srcObject = localCamStream;
+                }}
+                autoPlay
+                playsInline
+                muted
                 style={{
-                  marginLeft: 4,
-                  fontSize: 10,
-                  background: C.accentBg,
-                  color: C.accent,
-                  padding: "1px 5px",
-                  borderRadius: 4,
-                  fontWeight: 600,
+                  position: "absolute",
+                  inset: 0,
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  transform: "scaleX(-1)",
+                }}
+              />
+            ) : (
+              <Avatar name={session?.user?.name || "You"} />
+            )}
+            <NameTag>
+              {session?.user?.name ?? "You"}{" "}
+              {isDeafened ? "🔕" : isMuted ? "🔇" : ""}
+              {isPushToTalk && (
+                <span
+                  style={{
+                    marginLeft: 4,
+                    fontSize: 10,
+                    background: C.accentBg,
+                    color: C.accent,
+                    padding: "1px 5px",
+                    borderRadius: 4,
+                    fontWeight: 600,
+                  }}
+                >
+                  PTT
+                </span>
+              )}
+            </NameTag>
+          </div>
+
+          {/* Remote participant tiles */}
+          {participants.map((p, i) => {
+            const camStream = camStreams.get(p.socketId);
+            return (
+              <div
+                key={p.socketId}
+                style={{
+                  background: tileColors[(i + 1) % tileColors.length],
+                  borderRadius: 10,
+                  border: `1px solid ${C.border}`,
+                  aspectRatio: "16/9",
+                  flex: "1 1 340px",
+                  maxWidth: 520,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  position: "relative",
+                  overflow: "hidden",
                 }}
               >
-                PTT
-              </span>
-            )}
-          </NameTag>
+                {camStream ? (
+                  <video
+                    ref={(el) => {
+                      if (el && el.srcObject !== camStream) el.srcObject = camStream;
+                    }}
+                    autoPlay
+                    playsInline
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : (
+                  <Avatar name={p.userName} />
+                )}
+                <NameTag>
+                  {p.userName} {p.isMuted ? "🔇" : ""}
+                </NameTag>
+              </div>
+            );
+          })}
         </div>
+      )}
 
-        {/* Remote participant tiles */}
-        {participants.map((p, i) => {
-          const camStream = camStreams.get(p.socketId);
-          return (
-            <div
-              key={p.socketId}
-              style={{
-                background: tileColors[(i + 1) % tileColors.length],
-                borderRadius: 10,
-                border: `1px solid ${C.border}`,
-                aspectRatio: "16/9",
-                flex: "1 1 340px",
-                maxWidth: 520,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                position: "relative",
-                overflow: "hidden",
-              }}
-            >
-              {camStream ? (
-                <video
-                  ref={(el) => {
-                    if (el && el.srcObject !== camStream) el.srcObject = camStream;
-                  }}
-                  autoPlay
-                  playsInline
-                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              ) : (
-                <Avatar name={p.userName} />
-              )}
-              <NameTag>
-                {p.userName} {p.isMuted ? "🔇" : ""}
-              </NameTag>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Screen share area */}
+      {/* Screen share area — fills available height; participant tiles float inside */}
       {hasScreenContent && (
         <div
           ref={screenContainerRef}
@@ -902,9 +903,9 @@ export default function VoiceChannel({ channelId }: Props) {
             border: isFullscreen ? "none" : `1px solid ${C.border}`,
             position: "relative",
             width: "100%",
-            height: isFullscreen ? "100vh" : "auto",
-            aspectRatio: isFullscreen ? "auto" : "16/9",
-            maxHeight: isFullscreen ? "none" : "70vh",
+            flex: 1,
+            minHeight: 0,
+            height: isFullscreen ? "100vh" : undefined,
             overflow: "hidden",
           }}
         >
@@ -937,6 +938,7 @@ export default function VoiceChannel({ channelId }: Props) {
               containerHeight={360}
             />
           </div>
+
           {/* Fullscreen toggle */}
           <button
             onClick={toggleFullscreen}
@@ -963,6 +965,102 @@ export default function VoiceChannel({ channelId }: Props) {
           >
             {isFullscreen ? "✕" : "⛶"}
           </button>
+
+          {/* Participant tiles — floating overlay, bottom-right corner */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: 12,
+              right: 12,
+              zIndex: 10,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            {/* Self tile */}
+            <div
+              style={{
+                width: 160,
+                height: 90,
+                background: tileColors[0],
+                borderRadius: 8,
+                border: `1px solid ${C.border}`,
+                boxShadow: "0 4px 20px rgba(0,0,0,0.65)",
+                position: "relative",
+                overflow: "hidden",
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {localCamStream ? (
+                <video
+                  ref={(el) => {
+                    if (el && el.srcObject !== localCamStream) el.srcObject = localCamStream;
+                  }}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    transform: "scaleX(-1)",
+                  }}
+                />
+              ) : (
+                <Avatar name={session?.user?.name || "You"} size={28} />
+              )}
+              <NameTag>
+                {session?.user?.name ?? "You"}{" "}
+                {isDeafened ? "🔕" : isMuted ? "🔇" : ""}
+              </NameTag>
+            </div>
+
+            {/* Remote participant tiles */}
+            {participants.map((p, i) => {
+              const camStream = camStreams.get(p.socketId);
+              return (
+                <div
+                  key={p.socketId}
+                  style={{
+                    width: 160,
+                    height: 90,
+                    background: tileColors[(i + 1) % tileColors.length],
+                    borderRadius: 8,
+                    border: `1px solid ${C.border}`,
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.65)",
+                    position: "relative",
+                    overflow: "hidden",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {camStream ? (
+                    <video
+                      ref={(el) => {
+                        if (el && el.srcObject !== camStream) el.srcObject = camStream;
+                      }}
+                      autoPlay
+                      playsInline
+                      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <Avatar name={p.userName} size={28} />
+                  )}
+                  <NameTag>
+                    {p.userName} {p.isMuted ? "🔇" : ""}
+                  </NameTag>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

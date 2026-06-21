@@ -44,41 +44,169 @@ export default function CreateServerPage() {
     }
   }
 
+  const shellStyle: React.CSSProperties = {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#0b1830",
+    fontFamily:
+      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    padding: "24px",
+  };
+
+  const cardStyle: React.CSSProperties = {
+    width: "100%",
+    maxWidth: "440px",
+    background: "#161d2a",
+    border: "1px solid #252f42",
+    borderRadius: "16px",
+    padding: "40px 36px",
+  };
+
   if (!session) {
     return (
-      <main style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-        <p>You must be logged in. <a href="/login">Log in</a></p>
+      <main style={shellStyle}>
+        <div style={cardStyle}>
+          <p style={{ color: "#9ca3af", fontSize: "15px", margin: 0 }}>
+            You must be logged in.{" "}
+            <a href="/login" style={{ color: "#6366f1", textDecoration: "none" }}>
+              Log in
+            </a>
+          </p>
+        </div>
       </main>
     );
   }
 
   return (
-    <main style={{ padding: "2rem", maxWidth: "400px", fontFamily: "sans-serif" }}>
-      <h1>Create your server</h1>
-      <p>Logged in as <strong>{session.user?.name}</strong></p>
+    <main style={shellStyle}>
+      <div style={cardStyle}>
+        <p
+          style={{
+            color: "#6366f1",
+            fontSize: "12px",
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            margin: "0 0 12px",
+          }}
+        >
+          Almost there
+        </p>
 
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: "1rem" }}>
-          <label>Server name</label>
-          <br />
+        <h1
+          style={{
+            color: "#f3f4f6",
+            fontSize: "24px",
+            fontWeight: 600,
+            margin: "0 0 8px",
+          }}
+        >
+          Create your server
+        </h1>
+
+        <p
+          style={{
+            color: "#9ca3af",
+            fontSize: "14px",
+            margin: "0 0 28px",
+          }}
+        >
+          This is where you and your team will hang out. Give it a name —
+          you can always change it later.
+        </p>
+
+        <form onSubmit={handleSubmit}>
+          <label
+            htmlFor="server-name"
+            style={{
+              display: "block",
+              color: "#9ca3af",
+              fontSize: "12px",
+              fontWeight: 600,
+              letterSpacing: "0.03em",
+              textTransform: "uppercase",
+              marginBottom: "8px",
+            }}
+          >
+            Server name
+          </label>
           <input
+            id="server-name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            style={{ width: "100%", padding: "8px" }}
             placeholder="My Team"
             required
             minLength={2}
             maxLength={100}
+            style={{
+              width: "100%",
+              padding: "12px 14px",
+              fontSize: "15px",
+              color: "#f3f4f6",
+              background: "#0d1117",
+              border: "1px solid #252f42",
+              borderRadius: "10px",
+              outline: "none",
+              boxSizing: "border-box",
+              marginBottom: error ? "12px" : "24px",
+              transition: "border-color 0.15s ease",
+            }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "#6366f1")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "#252f42")}
           />
-        </div>
 
-        {error && <p style={{ color: "red" }}>{error}</p>}
+          {error && (
+            <p
+              style={{
+                color: "#f87171",
+                fontSize: "13px",
+                margin: "0 0 20px",
+              }}
+            >
+              {error}
+            </p>
+          )}
 
-        <button type="submit" disabled={loading} style={{ padding: "8px 16px" }}>
-          {loading ? "Creating..." : "Create Server"}
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{
+              width: "100%",
+              padding: "12px",
+              fontSize: "15px",
+              fontWeight: 600,
+              color: "#fff",
+              background: loading ? "#4b4fd1" : "#6366f1",
+              border: "none",
+              borderRadius: "10px",
+              cursor: loading ? "default" : "pointer",
+              transition: "background 0.15s ease",
+            }}
+            onMouseEnter={(e) => {
+              if (!loading) e.currentTarget.style.background = "#7c7ff2";
+            }}
+            onMouseLeave={(e) => {
+              if (!loading) e.currentTarget.style.background = "#6366f1";
+            }}
+          >
+            {loading ? "Creating..." : "Create server"}
+          </button>
+        </form>
+
+        <p
+          style={{
+            color: "#6b7280",
+            fontSize: "13px",
+            textAlign: "center",
+            margin: "24px 0 0",
+          }}
+        >
+          Logged in as <strong style={{ color: "#9ca3af" }}>{session.user?.name}</strong>
+        </p>
+      </div>
     </main>
   );
 }
