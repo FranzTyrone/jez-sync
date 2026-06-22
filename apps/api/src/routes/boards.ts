@@ -81,9 +81,12 @@ export async function boardRoutes(app: FastifyInstance) {
       return reply.status(401).send({ error: "Unauthorized" });
     }
 
-    const allowed = await checkPermission(userId, serverId, "canManageBoards");
-    if (!allowed) {
-      return reply.status(403).send({ error: "No permission to manage boards" });
+    // Any authenticated member can create a board
+    const member = await prisma.serverMember.findUnique({
+      where: { userId_serverId: { userId, serverId } },
+    });
+    if (!member) {
+      return reply.status(403).send({ error: "Not a member of this server" });
     }
 
     const boardType = type === "TABLE" ? "TABLE" : "KANBAN";
