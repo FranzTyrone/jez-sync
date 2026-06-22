@@ -25,6 +25,7 @@ export default function BoardsPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [boardType, setBoardType] = useState<"KANBAN" | "TABLE">("KANBAN");
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -45,12 +46,13 @@ export default function BoardsPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ name: newName.trim() }),
+      body: JSON.stringify({ name: newName.trim(), type: boardType }),
     });
     const board = await res.json();
     setSubmitting(false);
     setCreating(false);
     setNewName("");
+    setBoardType("KANBAN");
     if (board.id) {
       router.push(`/servers/${serverId}/boards/${board.id}`);
     }
@@ -217,12 +219,34 @@ export default function BoardsPage() {
               borderRadius: "8px",
               outline: "none",
               boxSizing: "border-box",
-              marginBottom: "12px",
+              marginBottom: "16px",
               transition: "border-color 0.15s ease",
             }}
             onFocus={(e) => (e.currentTarget.style.borderColor = "#6366f1")}
             onBlur={(e) => (e.currentTarget.style.borderColor = "#252f42")}
           />
+          <div style={{ marginBottom: "16px" }}>
+            <p style={{ color: "#9ca3af", fontSize: "12px", fontWeight: 600, margin: "0 0 8px" }}>
+              Board type:
+            </p>
+            <div style={{ display: "flex", gap: "12px" }}>
+              {["KANBAN", "TABLE"].map((type) => (
+                <label key={type} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="boardType"
+                    value={type}
+                    checked={boardType === type}
+                    onChange={() => setBoardType(type as "KANBAN" | "TABLE")}
+                    style={{ cursor: "pointer" }}
+                  />
+                  <span style={{ color: "#cbd5e1", fontSize: "13px" }}>
+                    {type === "KANBAN" ? "Kanban" : "Table"}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
           <div style={{ display: "flex", gap: "8px" }}>
             <button
               onClick={createBoard}

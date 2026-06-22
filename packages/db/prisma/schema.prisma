@@ -137,15 +137,26 @@ model Reaction {
 
 // ─── PROJECT BOARDS ─────────────────────────────────────
 
+enum BoardType {
+  KANBAN
+  TABLE
+}
+
 model Board {
-  id          String   @id @default(uuid())
-  name        String
-  serverId    String
-  createdById String
-  createdAt   DateTime @default(now())
-  server      Server   @relation(fields: [serverId], references: [id])
-  columns     Column[]
-  tasks       Task[]
+  id                    String        @id @default(uuid())
+  name                  String
+  type                  BoardType     @default(KANBAN)
+  serverId              String
+  createdById           String
+  createdAt             DateTime      @default(now())
+  server                Server        @relation(fields: [serverId], references: [id])
+  columns               Column[]
+  tasks                 Task[]
+  // TABLE board relations
+  groups                Group[]
+  tableItems            TableItem[]
+  columnDefinitions     ColumnDefinition[]
+  cellValues            CellValue[]
   @@index([serverId])
 }
 
@@ -175,6 +186,63 @@ model Task {
   assignee    User?     @relation("assignedTasks", fields: [assigneeId], references: [id])
   messages    Message[]
   @@index([boardId, columnId, position])
+}
+
+// ─── TABLE BOARDS (Monday-style) ────────────────────────
+
+model Group {
+  id        String      @id @default(uuid())
+  name      String
+  boardId   String
+  position  Int         @default(0)
+  board     Board       @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  items     TableItem[]
+  @@index([boardId, position])
+}
+
+model TableItem {
+  id        String      @id @default(uuid())
+  title     String
+  boardId   String
+  groupId   String?
+  position  Int         @default(0)
+  createdAt DateTime    @default(now())
+  board     Board       @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  group     Group?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  cells     CellValue[]
+  @@index([boardId, groupId, position])
+}
+
+enum ColumnType {
+  TEXT
+  STATUS
+}
+
+model ColumnDefinition {
+  id       String  @id @default(uuid())
+  name     String
+  type     ColumnType
+  boardId  String
+  position Int     @default(0)
+  settings Json    @default("{}")
+  board    Board   @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  cells    CellValue[]
+  @@index([boardId, position])
+  @@unique([boardId, name])
+}
+
+model CellValue {
+  itemId     String
+  columnId   String
+  value      Json
+  boardId    String
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  board      Board       @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  item       TableItem   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  column     ColumnDefinition @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  @@id([itemId, columnId])
+  @@index([boardId, itemId])
 }
 
 // ─── ANNOTATION ─────────────────────────────────────────

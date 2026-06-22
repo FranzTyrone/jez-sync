@@ -28,10 +28,10 @@ export async function boardRoutes(app: FastifyInstance) {
     return { boards, ownerId: server.ownerId };
   });
 
-  // Create a new board with default columns
+  // Create a new board with default columns/structure
   app.post("/servers/:serverId/boards", { preHandler: authenticateRequest }, async (request, reply) => {
     const { serverId } = request.params as { serverId: string };
-    const { name } = request.body as { name: string };
+    const { name, type } = request.body as { name: string; type?: "KANBAN" | "TABLE" };
     const userId = request.user?.id;
 
     if (!userId) {
@@ -43,21 +43,46 @@ export async function boardRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: "No permission to manage boards" });
     }
 
+    const boardType = type === "TABLE" ? "TABLE" : "KANBAN";
+
+    let boardData: any = {
+      name,
+      serverId,
+      createdById: userId,
+      type: boardType,
+    };
+
+    if (boardType === "KANBAN") {
+      boardData.columns = {
+        create: [
+          { name: "To Do",       position: 0 },
+          { name: "In Progress", position: 1 },
+          { name: "Done",        position: 2 },
+        ],
+      };
+    } else {
+      // TABLE board: create default group and column
+      boardData.groups = {
+        create: [{ name: "Backlog", position: 0 }],
+      };
+      boardData.columnDefinitions = {
+        create: [
+          {
+            name: "Task",
+            type: "TEXT",
+            position: 0,
+            settings: {},
+          },
+        ],
+      };
+    }
+
     const board = await prisma.board.create({
-      data: {
-        name,
-        serverId,
-        createdById: userId,
-        columns: {
-          create: [
-            { name: "To Do",       position: 0 },
-            { name: "In Progress", position: 1 },
-            { name: "Done",        position: 2 },
-          ],
-        },
-      },
+      data: boardData,
       include: {
         columns: { orderBy: { position: "asc" } },
+        groups: { orderBy: { position: "asc" } },
+        columnDefinitions: { orderBy: { position: "asc" } },
       },
     });
 

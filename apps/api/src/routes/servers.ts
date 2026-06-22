@@ -51,7 +51,7 @@ export async function serverRoutes(app: FastifyInstance) {
         });
 
         const board = await tx.board.create({
-          data: { name: "Main Board", serverId: server.id },
+          data: { name: "Main Board", serverId: server.id, createdById: user.id, type: "KANBAN" },
         });
 
         await Promise.all([

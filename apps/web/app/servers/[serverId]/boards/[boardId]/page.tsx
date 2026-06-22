@@ -37,7 +37,18 @@ type Column = {
 type Board = {
   id: string;
   name: string;
+  type: "KANBAN" | "TABLE";
   columns: Column[];
+};
+
+type TableBoard = {
+  id: string;
+  name: string;
+  type: "TABLE";
+  groups: Array<{ id: string; name: string; position: number }>;
+  items: Array<{ id: string; title: string; boardId: string; groupId?: string; position: number }>;
+  columns: Array<{ id: string; name: string; type: string; boardId: string; position: number; settings: Record<string, any> }>;
+  cells: Record<string, Record<string, any>>;
 };
 
 const PRIORITY_STYLES: Record<string, { bg: string; color: string; border: string }> = {
@@ -181,15 +192,32 @@ export default function BoardPage() {
   const boardId = params.boardId as string;
 
   const [board, setBoard] = useState<Board | null>(null);
+  const [tableBoard, setTableBoard] = useState<TableBoard | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newItemTitle, setNewItemTitle] = useState("");
+  const [newColumnName, setNewColumnName] = useState("");
+  const [newColumnType, setNewColumnType] = useState<"TEXT" | "STATUS">("TEXT");
+  const [editingCell, setEditingCell] = useState<{ itemId: string; columnId: string } | null>(null);
+  const [editingCellValue, setEditingCellValue] = useState("");
 
   const sensors = useSensors(useSensor(PointerSensor));
 
-  function loadBoard() {
-    fetch(`http://localhost:3001/boards/${boardId}`)
-      .then((res) => res.json())
-      .then((data: Board) => setBoard(data));
+  async function loadBoard() {
+    try {
+      const res = await fetch(`http://localhost:3001/boards/${boardId}`);
+      const data: Board = await res.json();
+      setBoard(data);
+
+      if (data.type === "TABLE") {
+        const tableRes = await fetch(`http://localhost:3001/boards/${boardId}/table`);
+        const tableData: TableBoard = await tableRes.json();
+        setTableBoard(tableData);
+      }
+    } catch (err) {
+      console.error("Failed to load board:", err);
+    }
   }
 
   useEffect(() => {
@@ -437,7 +465,317 @@ export default function BoardPage() {
         </h1>
       </div>
 
-      <DndContext
+      {/* Table Board View */}
+      {board?.type === "TABLE" ? (
+        <div style={{ background: "#161d2a", borderRadius: "12px", overflow: "hidden" }}>
+          {tableBoard ? (
+            <>
+              {/* Groups, Items, Columns UI */}
+              <div style={{ padding: "16px", borderBottom: "1px solid #252f42" }}>
+                <div style={{ marginBottom: "16px" }}>
+                  <h3 style={{ color: "#f3f4f6", margin: "0 0 12px", fontSize: "14px", fontWeight: 600 }}>
+                    Groups
+                  </h3>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                    {tableBoard.groups.map((g) => (
+                      <div
+                        key={g.id}
+                        style={{
+                          padding: "8px 12px",
+                          background: "#0d1117",
+                          border: "1px solid #252f42",
+                          borderRadius: "6px",
+                          color: "#cbd5e1",
+                          fontSize: "12px",
+                        }}
+                      >
+                        {g.name}
+                      </div>
+                    ))}
+                    <input
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === "Enter" && newGroupName.trim()) {
+                          await fetch(`http://localhost:3001/boards/${boardId}/groups`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({ name: newGroupName.trim() }),
+                          });
+                          setNewGroupName("");
+                          loadBoard();
+                        }
+                      }}
+                      placeholder="New group... (Enter to add)"
+                      style={{
+                        padding: "8px 12px",
+                        background: "#0d1117",
+                        border: "1px solid #252f42",
+                        borderRadius: "6px",
+                        color: "#cbd5e1",
+                        fontSize: "12px",
+                        outline: "none",
+                      }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <h3 style={{ color: "#f3f4f6", margin: "0 0 12px", fontSize: "14px", fontWeight: 600 }}>
+                    Columns
+                  </h3>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                    {tableBoard.columns.map((c) => (
+                      <div
+                        key={c.id}
+                        style={{
+                          padding: "8px 12px",
+                          background: "#0d1117",
+                          border: "1px solid #6366f1",
+                          borderRadius: "6px",
+                          color: "#cbd5e1",
+                          fontSize: "12px",
+                        }}
+                      >
+                        {c.name} ({c.type})
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", gap: "4px" }}>
+                      <input
+                        value={newColumnName}
+                        onChange={(e) => setNewColumnName(e.target.value)}
+                        placeholder="Column name..."
+                        style={{
+                          padding: "8px 12px",
+                          background: "#0d1117",
+                          border: "1px solid #252f42",
+                          borderRadius: "6px",
+                          color: "#cbd5e1",
+                          fontSize: "12px",
+                          outline: "none",
+                        }}
+                      />
+                      <select
+                        value={newColumnType}
+                        onChange={(e) => setNewColumnType(e.target.value as "TEXT" | "STATUS")}
+                        style={{
+                          padding: "8px 12px",
+                          background: "#0d1117",
+                          border: "1px solid #252f42",
+                          borderRadius: "6px",
+                          color: "#cbd5e1",
+                          fontSize: "12px",
+                          outline: "none",
+                        }}
+                      >
+                        <option value="TEXT">Text</option>
+                        <option value="STATUS">Status</option>
+                      </select>
+                      <button
+                        onClick={async () => {
+                          if (!newColumnName.trim()) return;
+                          let settings: any = {};
+                          if (newColumnType === "STATUS") {
+                            // Create default status options
+                            settings = {
+                              options: [
+                                { id: "opt-todo", label: "To Do" },
+                                { id: "opt-in-progress", label: "In Progress" },
+                                { id: "opt-done", label: "Done" },
+                              ],
+                            };
+                          }
+                          await fetch(`http://localhost:3001/boards/${boardId}/columns`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({
+                              name: newColumnName.trim(),
+                              type: newColumnType,
+                              settings,
+                            }),
+                          });
+                          setNewColumnName("");
+                          setNewColumnType("TEXT");
+                          loadBoard();
+                        }}
+                        style={{
+                          padding: "8px 12px",
+                          background: "#6366f1",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          fontSize: "12px",
+                          fontWeight: 500,
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <div style={{ padding: "16px", overflowX: "auto" }}>
+                {/* Groups as table sections */}
+                {tableBoard.groups.map((group) => (
+                  <div key={group.id} style={{ marginBottom: "24px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                      <h4 style={{ color: "#cbd5e1", margin: 0, fontSize: "13px", fontWeight: 600 }}>
+                        {group.name}
+                      </h4>
+                      <button
+                        onClick={async () => {
+                          const title = prompt("Item title:");
+                          if (!title) return;
+                          const res = await fetch(`http://localhost:3001/boards/${boardId}/items`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({ title, groupId: group.id }),
+                          });
+                          if (res.ok) loadBoard();
+                        }}
+                        style={{
+                          fontSize: "12px",
+                          padding: "4px 8px",
+                          background: "#6366f1",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        + Add item
+                      </button>
+                    </div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", color: "#cbd5e1", fontSize: "13px", marginBottom: "16px" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid #252f42" }}>
+                          <th style={{ textAlign: "left", padding: "8px", color: "#9ca3af", fontWeight: 500 }}>Title</th>
+                          {tableBoard.columns.map((c) => (
+                            <th key={c.id} style={{ textAlign: "left", padding: "8px", color: "#9ca3af", fontWeight: 500 }}>
+                              {c.name}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tableBoard.items.filter((i) => i.groupId === group.id).map((item) => (
+                          <tr key={item.id} style={{ borderBottom: "1px solid #252f42" }}>
+                            <td style={{ padding: "8px", minWidth: "150px" }}>{item.title}</td>
+                            {tableBoard.columns.map((col) => {
+                              const cellData = tableBoard.cells[item.id]?.[col.id];
+                              const isEditing = editingCell?.itemId === item.id && editingCell?.columnId === col.id;
+                              const isStatus = col.type === "STATUS";
+                              const statusOptions = isStatus ? (col.settings?.options || []) : [];
+                              const currentStatusId = isStatus ? cellData?.statusId : null;
+                              const currentStatusLabel = statusOptions.find((o: any) => o.id === currentStatusId)?.label;
+
+                              return (
+                                <td
+                                  key={col.id}
+                                  onClick={() => {
+                                    setEditingCell({ itemId: item.id, columnId: col.id });
+                                    setEditingCellValue(currentStatusId || cellData?.text || "");
+                                  }}
+                                  style={{
+                                    padding: "8px",
+                                    background: isEditing ? "#1e293b" : "#0d1117",
+                                    cursor: "pointer",
+                                    minWidth: "120px",
+                                  }}
+                                >
+                                  {isEditing ? (
+                                    isStatus ? (
+                                      <select
+                                        autoFocus
+                                        value={editingCellValue}
+                                        onChange={(e) => setEditingCellValue(e.target.value)}
+                                        onBlur={async () => {
+                                          if (editingCellValue) {
+                                            await fetch("http://localhost:3001/cells", {
+                                              method: "POST",
+                                              headers: { "Content-Type": "application/json" },
+                                              credentials: "include",
+                                              body: JSON.stringify({ itemId: item.id, columnId: col.id, value: { statusId: editingCellValue } }),
+                                            });
+                                          }
+                                          setEditingCell(null);
+                                          loadBoard();
+                                        }}
+                                        style={{
+                                          width: "100%",
+                                          padding: "4px",
+                                          background: "#0d1117",
+                                          border: "1px solid #6366f1",
+                                          borderRadius: "4px",
+                                          color: "#cbd5e1",
+                                          fontSize: "12px",
+                                          outline: "none",
+                                        }}
+                                      >
+                                        <option value="">-- None --</option>
+                                        {statusOptions.map((opt: any) => (
+                                          <option key={opt.id} value={opt.id}>
+                                            {opt.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <input
+                                        autoFocus
+                                        value={editingCellValue}
+                                        onChange={(e) => setEditingCellValue(e.target.value)}
+                                        onBlur={async () => {
+                                          await fetch("http://localhost:3001/cells", {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            credentials: "include",
+                                            body: JSON.stringify({ itemId: item.id, columnId: col.id, value: { text: editingCellValue } }),
+                                          });
+                                          setEditingCell(null);
+                                          loadBoard();
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                          if (e.key === "Escape") setEditingCell(null);
+                                        }}
+                                        style={{
+                                          width: "100%",
+                                          padding: "4px",
+                                          background: "#0d1117",
+                                          border: "1px solid #6366f1",
+                                          borderRadius: "4px",
+                                          color: "#cbd5e1",
+                                          fontSize: "12px",
+                                          outline: "none",
+                                        }}
+                                      />
+                                    )
+                                  ) : (
+                                    isStatus ? (currentStatusLabel || "-") : (cellData?.text || "-")
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p style={{ padding: "16px", color: "#9ca3af" }}>Loading table...</p>
+          )}
+        </div>
+      ) : (
+        /* Kanban Board View */
+        <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragOver={handleDragOver}
@@ -612,6 +950,7 @@ export default function BoardPage() {
           ))}
         </div>
       </DndContext>
+      )}
     </main>
   );
 }

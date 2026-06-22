@@ -7,6 +7,7 @@ import { serverRoutes } from "./routes/servers";
 import { inviteRoutes } from "./routes/invites";
 import { roleRoutes } from "./routes/roles";
 import { boardRoutes } from "./routes/boards";
+import { tableRoutes } from "./routes/tables";
 import { createWorker } from "./sfu/worker";
 import {
   getOrCreateRoom,
@@ -31,6 +32,7 @@ app.register(serverRoutes);
 app.register(inviteRoutes);
 app.register(roleRoutes);
 app.register(boardRoutes);
+app.register(tableRoutes);
 
 const start = async () => {
   try {
@@ -46,7 +48,11 @@ const start = async () => {
     await app.listen({ port: 3001, host: "0.0.0.0" });
     console.log("API running on http://localhost:3001");
 
-    await createWorker();
+    try {
+      await createWorker();
+    } catch (err) {
+      console.error("Warning: mediasoup worker failed to start (voice features may be limited):", (err as Error).message);
+    }
 
     const io = new Server(app.server, {
       cors: {
