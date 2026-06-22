@@ -6,7 +6,17 @@
       "Bash(pkill -9 node)",
       "Bash(npm run *)",
       "Bash(curl -s http://localhost:3001/health)",
-      "Bash(curl -s http://127.0.0.1:3001/health)"
+      "Bash(curl -s http://127.0.0.1:3001/health)",
+      "Bash(awk '/tableBoard \\\\?/,/^      \\\\\\) : \\\\\\(/ {print NR\": \"$0}' page.tsx)",
+      "Bash(awk '/\\\\/\\\\*\\\\* Groups as table sections/,/}\\\\\\)$/' page.tsx)",
+      "Bash(npx tsc *)",
+      "Bash(git checkout *)",
+      "Bash(node -c apps/web/app/servers/\\\\[serverId\\\\]/boards/\\\\[boardId\\\\]/page.tsx)",
+      "Bash(timeout 20 npx next dev)",
+      "Bash(npm install *)",
+      "Bash(curl -s http://localhost:3000)",
+      "Bash(curl -s http://localhost:3000/api/auth/signin)",
+      "Bash(tee /tmp/web-dev.log)"
     ]
   }
 }

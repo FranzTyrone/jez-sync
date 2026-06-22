@@ -954,6 +954,15 @@ export default function BoardPage() {
                                     ) : (
                                       <input value={editingCellValue} readOnly />
                                     )
+                                  ) : (col.type === "STATUS" || col.type === "PRIORITY") && cellData ? (
+                                    (() => {
+                                      const optId = cellData.optionId || cellData.statusId;
+                                      if (!optId) return getDisplayValue();
+                                      const options = col.settings?.options || [];
+                                      const opt = options.find((o: any) => o.id === optId);
+                                      if (!opt?.color) return getDisplayValue();
+                                      return <span style={{ background: opt.color, color: "#fff", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 500, display: "inline-block", whiteSpace: "nowrap" }}>{opt.label}</span>;
+                                    })()
                                   ) : (
                                     getDisplayValue()
                                   )}
