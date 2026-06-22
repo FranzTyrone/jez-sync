@@ -70,13 +70,14 @@ export async function tableRoutes(app: FastifyInstance) {
   // POST /boards/:boardId/groups - create group
   app.post("/boards/:boardId/groups", { preHandler: authenticateRequest }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string };
-    const { name } = request.body as { name: string };
     const userId = request.user?.id;
 
     if (!userId) return reply.status(401).send({ error: "Unauthorized" });
 
     const auth = await authorize(userId, boardId, reply);
-    if (!auth.authorized) return;
+    if (!auth) return;
+
+    const { name } = request.body as { name: string };
 
     const lastGroup = await prisma.group.findFirst({
       where: { boardId },
@@ -98,7 +99,6 @@ export async function tableRoutes(app: FastifyInstance) {
   // PATCH /groups/:groupId - rename group
   app.patch("/groups/:groupId", { preHandler: authenticateRequest }, async (request, reply) => {
     const { groupId } = request.params as { groupId: string };
-    const { name } = request.body as { name: string };
     const userId = request.user?.id;
 
     if (!userId) return reply.status(401).send({ error: "Unauthorized" });
@@ -110,7 +110,9 @@ export async function tableRoutes(app: FastifyInstance) {
     if (!group) return reply.status(404).send({ error: "Group not found" });
 
     const auth = await authorize(userId, group.boardId, reply);
-    if (!auth.authorized) return;
+    if (!auth) return;
+
+    const { name } = request.body as { name: string };
 
     const updated = await prisma.group.update({
       where: { id: groupId },
@@ -134,7 +136,7 @@ export async function tableRoutes(app: FastifyInstance) {
     if (!group) return reply.status(404).send({ error: "Group not found" });
 
     const auth = await authorize(userId, group.boardId, reply);
-    if (!auth.authorized) return;
+    if (!auth) return;
 
     await prisma.group.delete({ where: { id: groupId } });
     return { success: true };
@@ -143,13 +145,14 @@ export async function tableRoutes(app: FastifyInstance) {
   // POST /boards/:boardId/items - create item (row)
   app.post("/boards/:boardId/items", { preHandler: authenticateRequest }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string };
-    const { title, groupId } = request.body as { title: string; groupId?: string };
     const userId = request.user?.id;
 
     if (!userId) return reply.status(401).send({ error: "Unauthorized" });
 
     const auth = await authorize(userId, boardId, reply);
-    if (!auth.authorized) return;
+    if (!auth) return;
+
+    const { title, groupId } = request.body as { title: string; groupId?: string };
 
     const lastItem = await prisma.tableItem.findFirst({
       where: { boardId, groupId: groupId || null },
@@ -183,7 +186,7 @@ export async function tableRoutes(app: FastifyInstance) {
     if (!item) return reply.status(404).send({ error: "Item not found" });
 
     const auth = await authorize(userId, item.boardId, reply);
-    if (!auth.authorized) return;
+    if (!auth) return;
 
     await prisma.tableItem.delete({ where: { id: itemId } });
     return { success: true };
@@ -192,17 +195,18 @@ export async function tableRoutes(app: FastifyInstance) {
   // POST /boards/:boardId/columns - create column definition
   app.post("/boards/:boardId/columns", { preHandler: authenticateRequest }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string };
-    const { name, type, settings } = request.body as {
-      name: string;
-      type: "TEXT" | "STATUS";
-      settings?: Record<string, any>;
-    };
     const userId = request.user?.id;
 
     if (!userId) return reply.status(401).send({ error: "Unauthorized" });
 
     const auth = await authorize(userId, boardId, reply);
-    if (!auth.authorized) return;
+    if (!auth) return;
+
+    const { name, type, settings } = request.body as {
+      name: string;
+      type: "TEXT" | "STATUS";
+      settings?: Record<string, any>;
+    };
 
     const lastCol = await prisma.columnDefinition.findFirst({
       where: { boardId },
@@ -237,7 +241,7 @@ export async function tableRoutes(app: FastifyInstance) {
     if (!column) return reply.status(404).send({ error: "Column not found" });
 
     const auth = await authorize(userId, column.boardId, reply);
-    if (!auth.authorized) return;
+    if (!auth) return;
 
     await prisma.columnDefinition.delete({ where: { id: columnId } });
     return { success: true };
@@ -245,7 +249,7 @@ export async function tableRoutes(app: FastifyInstance) {
 
   // POST /cells - upsert cell value
   app.post("/cells", { preHandler: authenticateRequest }, async (request, reply) => {
-    const { itemId, columnId, value } = request.body as {
+    const { itemId, columnId } = request.body as {
       itemId: string;
       columnId: string;
       value?: Record<string, any> | null;
@@ -272,7 +276,9 @@ export async function tableRoutes(app: FastifyInstance) {
     }
 
     const auth = await authorize(userId, item.boardId, reply);
-    if (!auth.authorized) return;
+    if (!auth) return;
+
+    const { value } = request.body;
 
     // Delete if clearing
     if (!value || (typeof value === "object" && Object.keys(value).length === 0)) {

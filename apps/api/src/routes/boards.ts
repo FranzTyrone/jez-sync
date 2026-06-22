@@ -265,12 +265,27 @@ export async function boardRoutes(app: FastifyInstance) {
   });
 
   // Create a new task on a board
-  app.post("/boards/:boardId/tasks", async (request, reply) => {
+  app.post("/boards/:boardId/tasks", { preHandler: authenticateRequest }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string };
-    const { userId, serverId, title, description, priority, columnId, assigneeId, dueDate } =
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+
+    // Check visibility and authorization first (404 if user can't access/modify board)
+    const access = await canAccessBoard(userId, boardId);
+    if (!access.allowed) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
+
+    // User must be creator or owner to create tasks
+    if (!access.isCreatorOrOwner) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
+
+    const { title, description, priority, columnId, assigneeId, dueDate } =
       request.body as {
-        userId: string;
-        serverId: string;
         title: string;
         description?: string;
         priority?: "LOW" | "MEDIUM" | "HIGH";
@@ -278,17 +293,6 @@ export async function boardRoutes(app: FastifyInstance) {
         assigneeId?: string;
         dueDate?: string;
       };
-
-    // Check visibility first (404 if user can't access board)
-    const access = await canAccessBoard(userId, boardId);
-    if (!access.allowed) {
-      return reply.status(404).send({ error: "Board not found" });
-    }
-
-    const allowed = await checkPermission(userId, serverId, "canManageBoards");
-    if (!allowed) {
-      return reply.status(403).send({ error: "No permission to manage boards" });
-    }
 
     const lastTask = await prisma.task.findFirst({
       where: { columnId },
@@ -312,14 +316,13 @@ export async function boardRoutes(app: FastifyInstance) {
   });
 
   // Move a task to a different column (drag and drop)
-  app.patch("/tasks/:taskId/move", async (request, reply) => {
+  app.patch("/tasks/:taskId/move", { preHandler: authenticateRequest }, async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
-    const { userId, serverId, columnId, position } = request.body as {
-      userId: string;
-      serverId: string;
-      columnId: string;
-      position: number;
-    };
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
 
     // Resolve boardId from taskId
     const task = await prisma.task.findUnique({
@@ -330,16 +333,20 @@ export async function boardRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Task not found" });
     }
 
-    // Check visibility first (404 if user can't access board)
+    // Check visibility and authorization first (404 if user can't access/modify board)
     const access = await canAccessBoard(userId, task.boardId);
     if (!access.allowed) {
       return reply.status(404).send({ error: "Board not found" });
     }
 
-    const allowed = await checkPermission(userId, serverId, "canManageBoards");
-    if (!allowed) {
-      return reply.status(403).send({ error: "No permission to manage boards" });
+    if (!access.isCreatorOrOwner) {
+      return reply.status(404).send({ error: "Board not found" });
     }
+
+    const { columnId, position } = request.body as {
+      columnId: string;
+      position: number;
+    };
 
     const updated = await prisma.task.update({
       where: { id: taskId },

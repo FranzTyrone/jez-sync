@@ -4,11 +4,33 @@ exports.tableRoutes = tableRoutes;
 const prisma_1 = require("../lib/prisma");
 const auth_1 = require("../lib/auth");
 async function tableRoutes(app) {
+    // Helper: check if user can ACCESS a board (read/write its data)
+    // Returns true if board is PUBLIC or if PRIVATE and user is creator/owner
+    async function canAccessBoard(userId, boardId) {
+        const board = await prisma_1.prisma.board.findUnique({
+            where: { id: boardId },
+            select: { id: true, serverId: true, createdById: true, visibility: true },
+        });
+        if (!board) {
+            return { allowed: false };
+        }
+        const server = await prisma_1.prisma.server.findUnique({
+            where: { id: board.serverId },
+            select: { id: true, ownerId: true },
+        });
+        if (!server) {
+            return { allowed: false };
+        }
+        const isCreatorOrOwner = userId === board.createdById || userId === server.ownerId;
+        const allowed = board.visibility === "PUBLIC" || isCreatorOrOwner;
+        return { allowed, board, server, isCreatorOrOwner };
+    }
     // Helper: resolve and authorize (userId must be creator or server owner)
+    // Used for write operations that require full control, not just access
     async function authorize(userId, boardId, reply) {
         const board = await prisma_1.prisma.board.findUnique({
             where: { id: boardId },
-            select: { serverId: true, createdById: true },
+            select: { serverId: true, createdById: true, visibility: true },
         });
         if (!board) {
             return reply.status(404).send({ error: "Board not found" });
@@ -22,21 +44,25 @@ async function tableRoutes(app) {
         }
         const isCreator = userId === board.createdById;
         const isOwner = userId === server.ownerId;
+        // Check visibility: if PRIVATE and user isn't creator/owner, reject with 404
+        if (board.visibility === "PRIVATE" && !isCreator && !isOwner) {
+            return reply.status(404).send({ error: "Board not found" });
+        }
         if (!isCreator && !isOwner) {
-            return reply.status(403).send({ error: "Not authorized" });
+            return reply.status(404).send({ error: "Not authorized to modify this board" });
         }
         return { board, server, authorized: true };
     }
     // POST /boards/:boardId/groups - create group
     app.post("/boards/:boardId/groups", { preHandler: auth_1.authenticateRequest }, async (request, reply) => {
         const { boardId } = request.params;
-        const { name } = request.body;
         const userId = request.user?.id;
         if (!userId)
             return reply.status(401).send({ error: "Unauthorized" });
         const auth = await authorize(userId, boardId, reply);
         if (!auth.authorized)
             return;
+        const { name } = request.body;
         const lastGroup = await prisma_1.prisma.group.findFirst({
             where: { boardId },
             orderBy: { position: "desc" },
@@ -54,7 +80,6 @@ async function tableRoutes(app) {
     // PATCH /groups/:groupId - rename group
     app.patch("/groups/:groupId", { preHandler: auth_1.authenticateRequest }, async (request, reply) => {
         const { groupId } = request.params;
-        const { name } = request.body;
         const userId = request.user?.id;
         if (!userId)
             return reply.status(401).send({ error: "Unauthorized" });
@@ -67,6 +92,7 @@ async function tableRoutes(app) {
         const auth = await authorize(userId, group.boardId, reply);
         if (!auth.authorized)
             return;
+        const { name } = request.body;
         const updated = await prisma_1.prisma.group.update({
             where: { id: groupId },
             data: { name },
@@ -94,13 +120,13 @@ async function tableRoutes(app) {
     // POST /boards/:boardId/items - create item (row)
     app.post("/boards/:boardId/items", { preHandler: auth_1.authenticateRequest }, async (request, reply) => {
         const { boardId } = request.params;
-        const { title, groupId } = request.body;
         const userId = request.user?.id;
         if (!userId)
             return reply.status(401).send({ error: "Unauthorized" });
         const auth = await authorize(userId, boardId, reply);
         if (!auth.authorized)
             return;
+        const { title, groupId } = request.body;
         const lastItem = await prisma_1.prisma.tableItem.findFirst({
             where: { boardId, groupId: groupId || null },
             orderBy: { position: "desc" },
@@ -137,13 +163,13 @@ async function tableRoutes(app) {
     // POST /boards/:boardId/columns - create column definition
     app.post("/boards/:boardId/columns", { preHandler: auth_1.authenticateRequest }, async (request, reply) => {
         const { boardId } = request.params;
-        const { name, type, settings } = request.body;
         const userId = request.user?.id;
         if (!userId)
             return reply.status(401).send({ error: "Unauthorized" });
         const auth = await authorize(userId, boardId, reply);
         if (!auth.authorized)
             return;
+        const { name, type, settings } = request.body;
         const lastCol = await prisma_1.prisma.columnDefinition.findFirst({
             where: { boardId },
             orderBy: { position: "desc" },
@@ -180,7 +206,7 @@ async function tableRoutes(app) {
     });
     // POST /cells - upsert cell value
     app.post("/cells", { preHandler: auth_1.authenticateRequest }, async (request, reply) => {
-        const { itemId, columnId, value } = request.body;
+        const { itemId, columnId } = request.body;
         const userId = request.user?.id;
         if (!userId)
             return reply.status(401).send({ error: "Unauthorized" });
@@ -203,6 +229,7 @@ async function tableRoutes(app) {
         const auth = await authorize(userId, item.boardId, reply);
         if (!auth.authorized)
             return;
+        const { value } = request.body;
         // Delete if clearing
         if (!value || (typeof value === "object" && Object.keys(value).length === 0)) {
             await prisma_1.prisma.cellValue.deleteMany({
@@ -227,8 +254,15 @@ async function tableRoutes(app) {
         return cell;
     });
     // GET /boards/:boardId/table - fetch full table (groups, items, columns, cells)
-    app.get("/boards/:boardId/table", async (request, reply) => {
+    app.get("/boards/:boardId/table", { preHandler: auth_1.authenticateRequest }, async (request, reply) => {
         const { boardId } = request.params;
+        const userId = request.user?.id;
+        if (!userId)
+            return reply.status(401).send({ error: "Unauthorized" });
+        // Check visibility
+        const access = await canAccessBoard(userId, boardId);
+        if (!access.allowed)
+            return reply.status(404).send({ error: "Board not found" });
         const board = await prisma_1.prisma.board.findUnique({
             where: { id: boardId },
             select: { type: true },

@@ -17,6 +17,15 @@ const worker_1 = require("./sfu/worker");
 const rooms_1 = require("./sfu/rooms");
 const app = (0, fastify_1.default)({ logger: true });
 const activeVoiceUsers = new Map();
+// Get allowed origins from env or default to localhost
+function getAllowedOrigins() {
+    const corsOrigins = process.env.CORS_ORIGINS || "http://localhost:3000";
+    // If comma-separated, return as array
+    if (corsOrigins.includes(",")) {
+        return corsOrigins.split(",").map(o => o.trim());
+    }
+    return corsOrigins;
+}
 app.get("/health", async () => {
     return { status: "ok", service: "jez-sync-api" };
 });
@@ -30,8 +39,9 @@ const start = async () => {
     try {
         // Register cookie support first (needed for auth middleware)
         await app.register(import("@fastify/cookie"));
+        const allowedOrigins = getAllowedOrigins();
         await app.register(import("@fastify/cors"), {
-            origin: "http://localhost:3000",
+            origin: allowedOrigins,
             methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
             credentials: true,
         });
@@ -45,8 +55,9 @@ const start = async () => {
         }
         const io = new socket_io_1.Server(app.server, {
             cors: {
-                origin: "http://localhost:3000",
+                origin: allowedOrigins,
                 methods: ["GET", "POST"],
+                credentials: true,
             },
         });
         io.on("connection", (socket) => {
