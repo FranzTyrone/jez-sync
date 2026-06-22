@@ -216,6 +216,10 @@ model TableItem {
 enum ColumnType {
   TEXT
   STATUS
+  NUMBER
+  DATE
+  PERSON
+  PRIORITY
 }
 
 model ColumnDefinition {

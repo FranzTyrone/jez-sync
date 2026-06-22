@@ -198,9 +198,10 @@ export default function BoardPage() {
   const [newGroupName, setNewGroupName] = useState("");
   const [newItemTitle, setNewItemTitle] = useState("");
   const [newColumnName, setNewColumnName] = useState("");
-  const [newColumnType, setNewColumnType] = useState<"TEXT" | "STATUS">("TEXT");
+  const [newColumnType, setNewColumnType] = useState<"TEXT" | "STATUS" | "NUMBER" | "DATE" | "PERSON" | "PRIORITY">("TEXT");
   const [editingCell, setEditingCell] = useState<{ itemId: string; columnId: string } | null>(null);
-  const [editingCellValue, setEditingCellValue] = useState("");
+  const [editingCellValue, setEditingCellValue] = useState<any>(null);
+  const [serverMembers, setServerMembers] = useState<Array<{ id: string; name: string }>>([]);
 
   const sensors = useSensors(useSensor(PointerSensor));
 
@@ -214,6 +215,11 @@ export default function BoardPage() {
         const tableRes = await fetch(`http://localhost:3001/boards/${boardId}/table`);
         const tableData: TableBoard = await tableRes.json();
         setTableBoard(tableData);
+
+        // Fetch server members for PERSON column type
+        const membersRes = await fetch(`http://localhost:3001/servers/${serverId}/members`);
+        const members = await membersRes.json();
+        setServerMembers(members);
       }
     } catch (err) {
       console.error("Failed to load board:", err);
@@ -535,9 +541,33 @@ export default function BoardPage() {
                           borderRadius: "6px",
                           color: "#cbd5e1",
                           fontSize: "12px",
+                          display: "flex",
+                          gap: "6px",
+                          alignItems: "center",
                         }}
                       >
-                        {c.name} ({c.type})
+                        <span>{c.name} ({c.type})</span>
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm(`Delete column "${c.name}"?`)) return;
+                            await fetch(`http://localhost:3001/columns/${c.id}`, {
+                              method: "DELETE",
+                              credentials: "include",
+                            });
+                            loadBoard();
+                          }}
+                          style={{
+                            fontSize: "11px",
+                            padding: "2px 4px",
+                            background: "#7f1d1d",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "3px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          ✕
+                        </button>
                       </div>
                     ))}
                     <div style={{ display: "flex", gap: "4px" }}>
@@ -557,7 +587,7 @@ export default function BoardPage() {
                       />
                       <select
                         value={newColumnType}
-                        onChange={(e) => setNewColumnType(e.target.value as "TEXT" | "STATUS")}
+                        onChange={(e) => setNewColumnType(e.target.value as any)}
                         style={{
                           padding: "8px 12px",
                           background: "#0d1117",
@@ -569,19 +599,33 @@ export default function BoardPage() {
                         }}
                       >
                         <option value="TEXT">Text</option>
+                        <option value="NUMBER">Number</option>
+                        <option value="DATE">Date</option>
                         <option value="STATUS">Status</option>
+                        <option value="PRIORITY">Priority</option>
+                        <option value="PERSON">Person</option>
                       </select>
                       <button
                         onClick={async () => {
                           if (!newColumnName.trim()) return;
                           let settings: any = {};
                           if (newColumnType === "STATUS") {
-                            // Create default status options
+                            // User-defined status options
                             settings = {
                               options: [
                                 { id: "opt-todo", label: "To Do" },
                                 { id: "opt-in-progress", label: "In Progress" },
                                 { id: "opt-done", label: "Done" },
+                              ],
+                            };
+                          } else if (newColumnType === "PRIORITY") {
+                            // Fixed priority options
+                            settings = {
+                              options: [
+                                { id: "prio-low", label: "Low" },
+                                { id: "prio-medium", label: "Medium" },
+                                { id: "prio-high", label: "High" },
+                                { id: "prio-urgent", label: "Urgent" },
                               ],
                             };
                           }
@@ -626,30 +670,53 @@ export default function BoardPage() {
                       <h4 style={{ color: "#cbd5e1", margin: 0, fontSize: "13px", fontWeight: 600 }}>
                         {group.name}
                       </h4>
-                      <button
-                        onClick={async () => {
-                          const title = prompt("Item title:");
-                          if (!title) return;
-                          const res = await fetch(`http://localhost:3001/boards/${boardId}/items`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            credentials: "include",
-                            body: JSON.stringify({ title, groupId: group.id }),
-                          });
-                          if (res.ok) loadBoard();
-                        }}
-                        style={{
-                          fontSize: "12px",
-                          padding: "4px 8px",
-                          background: "#6366f1",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius: "4px",
-                          cursor: "pointer",
-                        }}
-                      >
-                        + Add item
-                      </button>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          onClick={async () => {
+                            const title = prompt("Item title:");
+                            if (!title) return;
+                            const res = await fetch(`http://localhost:3001/boards/${boardId}/items`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              credentials: "include",
+                              body: JSON.stringify({ title, groupId: group.id }),
+                            });
+                            if (res.ok) loadBoard();
+                          }}
+                          style={{
+                            fontSize: "12px",
+                            padding: "4px 8px",
+                            background: "#6366f1",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          + Add item
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm(`Delete group "${group.name}" and all its items?`)) return;
+                            await fetch(`http://localhost:3001/groups/${group.id}`, {
+                              method: "DELETE",
+                              credentials: "include",
+                            });
+                            loadBoard();
+                          }}
+                          style={{
+                            fontSize: "12px",
+                            padding: "4px 8px",
+                            background: "#7f1d1d",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          🗑 Delete
+                        </button>
+                      </div>
                     </div>
                     <table style={{ width: "100%", borderCollapse: "collapse", color: "#cbd5e1", fontSize: "13px", marginBottom: "16px" }}>
                       <thead>
@@ -665,21 +732,102 @@ export default function BoardPage() {
                       <tbody>
                         {tableBoard.items.filter((i) => i.groupId === group.id).map((item) => (
                           <tr key={item.id} style={{ borderBottom: "1px solid #252f42" }}>
-                            <td style={{ padding: "8px", minWidth: "150px" }}>{item.title}</td>
+                            <td style={{ padding: "8px", minWidth: "150px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                              <span>{item.title}</span>
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm(`Delete "${item.title}"?`)) return;
+                                  await fetch(`http://localhost:3001/items/${item.id}`, {
+                                    method: "DELETE",
+                                    credentials: "include",
+                                  });
+                                  loadBoard();
+                                }}
+                                style={{
+                                  fontSize: "11px",
+                                  padding: "2px 6px",
+                                  background: "#7f1d1d",
+                                  color: "#fff",
+                                  border: "none",
+                                  borderRadius: "3px",
+                                  cursor: "pointer",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                🗑
+                              </button>
+                            </td>
                             {tableBoard.columns.map((col) => {
                               const cellData = tableBoard.cells[item.id]?.[col.id];
                               const isEditing = editingCell?.itemId === item.id && editingCell?.columnId === col.id;
-                              const isStatus = col.type === "STATUS";
-                              const statusOptions = isStatus ? (col.settings?.options || []) : [];
-                              const currentStatusId = isStatus ? cellData?.statusId : null;
-                              const currentStatusLabel = statusOptions.find((o: any) => o.id === currentStatusId)?.label;
+
+                              // Helper to get display value based on type
+                              const getDisplayValue = () => {
+                                if (!cellData) return "-";
+                                switch (col.type) {
+                                  case "TEXT": return cellData.text || "-";
+                                  case "NUMBER": return cellData.number !== undefined ? String(cellData.number) : "-";
+                                  case "DATE": return cellData.date || "-";
+                                  case "STATUS":
+                                  case "PRIORITY": {
+                                    const optId = cellData.optionId || cellData.statusId; // Backward compat
+                                    const options = col.settings?.options || [];
+                                    return options.find((o: any) => o.id === optId)?.label || "-";
+                                  }
+                                  case "PERSON": {
+                                    const member = serverMembers.find((m) => m.id === cellData.userId);
+                                    return member?.name || "Unknown";
+                                  }
+                                  default: return "-";
+                                }
+                              };
+
+                              // Helper to save cell
+                              const saveCell = async (value: any) => {
+                                if (value === null || value === undefined || value === "") {
+                                  // Clear the cell
+                                  await fetch("http://localhost:3001/cells", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    credentials: "include",
+                                    body: JSON.stringify({ itemId: item.id, columnId: col.id, value: null }),
+                                  });
+                                } else {
+                                  let cellValue: any;
+                                  switch (col.type) {
+                                    case "TEXT": cellValue = { text: value }; break;
+                                    case "NUMBER": cellValue = { number: Number(value) }; break;
+                                    case "DATE": cellValue = { date: value }; break;
+                                    case "STATUS":
+                                    case "PRIORITY": cellValue = { optionId: value }; break;
+                                    case "PERSON": cellValue = { userId: value }; break;
+                                    default: cellValue = value;
+                                  }
+                                  await fetch("http://localhost:3001/cells", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    credentials: "include",
+                                    body: JSON.stringify({ itemId: item.id, columnId: col.id, value: cellValue }),
+                                  });
+                                }
+                                setEditingCell(null);
+                                loadBoard();
+                              };
 
                               return (
                                 <td
                                   key={col.id}
                                   onClick={() => {
                                     setEditingCell({ itemId: item.id, columnId: col.id });
-                                    setEditingCellValue(currentStatusId || cellData?.text || "");
+                                    let initValue = "";
+                                    if (cellData) {
+                                      if (col.type === "STATUS" || col.type === "PRIORITY") initValue = cellData.optionId || cellData.statusId || "";
+                                      else if (col.type === "PERSON") initValue = cellData.userId || "";
+                                      else if (col.type === "NUMBER") initValue = cellData.number !== undefined ? String(cellData.number) : "";
+                                      else if (col.type === "DATE") initValue = cellData.date || "";
+                                      else initValue = cellData.text || "";
+                                    }
+                                    setEditingCellValue(initValue);
                                   }}
                                   style={{
                                     padding: "8px",
@@ -689,56 +837,13 @@ export default function BoardPage() {
                                   }}
                                 >
                                   {isEditing ? (
-                                    isStatus ? (
-                                      <select
-                                        autoFocus
-                                        value={editingCellValue}
-                                        onChange={(e) => setEditingCellValue(e.target.value)}
-                                        onBlur={async () => {
-                                          if (editingCellValue) {
-                                            await fetch("http://localhost:3001/cells", {
-                                              method: "POST",
-                                              headers: { "Content-Type": "application/json" },
-                                              credentials: "include",
-                                              body: JSON.stringify({ itemId: item.id, columnId: col.id, value: { statusId: editingCellValue } }),
-                                            });
-                                          }
-                                          setEditingCell(null);
-                                          loadBoard();
-                                        }}
-                                        style={{
-                                          width: "100%",
-                                          padding: "4px",
-                                          background: "#0d1117",
-                                          border: "1px solid #6366f1",
-                                          borderRadius: "4px",
-                                          color: "#cbd5e1",
-                                          fontSize: "12px",
-                                          outline: "none",
-                                        }}
-                                      >
-                                        <option value="">-- None --</option>
-                                        {statusOptions.map((opt: any) => (
-                                          <option key={opt.id} value={opt.id}>
-                                            {opt.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    ) : (
+                                    col.type === "TEXT" ? (
                                       <input
                                         autoFocus
-                                        value={editingCellValue}
+                                        type="text"
+                                        value={editingCellValue || ""}
                                         onChange={(e) => setEditingCellValue(e.target.value)}
-                                        onBlur={async () => {
-                                          await fetch("http://localhost:3001/cells", {
-                                            method: "POST",
-                                            headers: { "Content-Type": "application/json" },
-                                            credentials: "include",
-                                            body: JSON.stringify({ itemId: item.id, columnId: col.id, value: { text: editingCellValue } }),
-                                          });
-                                          setEditingCell(null);
-                                          loadBoard();
-                                        }}
+                                        onBlur={() => saveCell(editingCellValue)}
                                         onKeyDown={(e) => {
                                           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                                           if (e.key === "Escape") setEditingCell(null);
@@ -754,9 +859,103 @@ export default function BoardPage() {
                                           outline: "none",
                                         }}
                                       />
+                                    ) : col.type === "NUMBER" ? (
+                                      <input
+                                        autoFocus
+                                        type="number"
+                                        value={editingCellValue}
+                                        onChange={(e) => setEditingCellValue(e.target.value)}
+                                        onBlur={() => saveCell(editingCellValue === "" ? null : editingCellValue)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                          if (e.key === "Escape") setEditingCell(null);
+                                        }}
+                                        style={{
+                                          width: "100%",
+                                          padding: "4px",
+                                          background: "#0d1117",
+                                          border: "1px solid #6366f1",
+                                          borderRadius: "4px",
+                                          color: "#cbd5e1",
+                                          fontSize: "12px",
+                                          outline: "none",
+                                        }}
+                                      />
+                                    ) : col.type === "DATE" ? (
+                                      <input
+                                        autoFocus
+                                        type="date"
+                                        value={editingCellValue}
+                                        onChange={(e) => setEditingCellValue(e.target.value)}
+                                        onBlur={() => saveCell(editingCellValue)}
+                                        style={{
+                                          width: "100%",
+                                          padding: "4px",
+                                          background: "#0d1117",
+                                          border: "1px solid #6366f1",
+                                          borderRadius: "4px",
+                                          color: "#cbd5e1",
+                                          fontSize: "12px",
+                                          outline: "none",
+                                        }}
+                                      />
+                                    ) : col.type === "STATUS" || col.type === "PRIORITY" ? (
+                                      <select
+                                        autoFocus
+                                        value={editingCellValue}
+                                        onChange={(e) => {
+                                          setEditingCellValue(e.target.value);
+                                          saveCell(e.target.value);
+                                        }}
+                                        style={{
+                                          width: "100%",
+                                          padding: "4px",
+                                          background: "#0d1117",
+                                          border: "1px solid #6366f1",
+                                          borderRadius: "4px",
+                                          color: "#cbd5e1",
+                                          fontSize: "12px",
+                                          outline: "none",
+                                        }}
+                                      >
+                                        <option value="">-- None --</option>
+                                        {(col.settings?.options || []).map((opt: any) => (
+                                          <option key={opt.id} value={opt.id}>
+                                            {opt.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : col.type === "PERSON" ? (
+                                      <select
+                                        autoFocus
+                                        value={editingCellValue}
+                                        onChange={(e) => {
+                                          setEditingCellValue(e.target.value);
+                                          saveCell(e.target.value);
+                                        }}
+                                        style={{
+                                          width: "100%",
+                                          padding: "4px",
+                                          background: "#0d1117",
+                                          border: "1px solid #6366f1",
+                                          borderRadius: "4px",
+                                          color: "#cbd5e1",
+                                          fontSize: "12px",
+                                          outline: "none",
+                                        }}
+                                      >
+                                        <option value="">-- Unassigned --</option>
+                                        {serverMembers.map((member) => (
+                                          <option key={member.id} value={member.id}>
+                                            {member.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <input value={editingCellValue} readOnly />
                                     )
                                   ) : (
-                                    isStatus ? (currentStatusLabel || "-") : (cellData?.text || "-")
+                                    getDisplayValue()
                                   )}
                                 </td>
                               );

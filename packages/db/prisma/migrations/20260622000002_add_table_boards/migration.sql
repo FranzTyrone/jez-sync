@@ -1,5 +1,10 @@
 -- Add BoardType enum and type column to Board
-CREATE TYPE IF NOT EXISTS "BoardType" AS ENUM ('KANBAN', 'TABLE');
+-- (Tables already exist from db push, skip if already applied)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'BoardType') THEN
+    CREATE TYPE "BoardType" AS ENUM ('KANBAN', 'TABLE');
+  END IF;
+END $$;
 ALTER TABLE "Board" ADD COLUMN IF NOT EXISTS "type" "BoardType" NOT NULL DEFAULT 'KANBAN';
 
 -- Create Group table for TABLE boards
@@ -13,7 +18,11 @@ CREATE TABLE IF NOT EXISTS "Group" (
 CREATE INDEX "Group_boardId_position_idx" ON "Group"("boardId", "position");
 
 -- Create ColumnType enum
-CREATE TYPE IF NOT EXISTS "ColumnType" AS ENUM ('TEXT', 'STATUS');
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ColumnType') THEN
+    CREATE TYPE "ColumnType" AS ENUM ('TEXT', 'STATUS');
+  END IF;
+END $$;
 
 -- Create ColumnDefinition table
 CREATE TABLE IF NOT EXISTS "ColumnDefinition" (

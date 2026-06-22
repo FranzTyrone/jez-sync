@@ -91,4 +91,21 @@ export async function serverRoutes(app: FastifyInstance) {
 
     return memberships.map((m) => m.server);
   });
+
+  // Get all members of a server (for PERSON column dropdown)
+  app.get("/servers/:serverId/members", async (request, reply) => {
+    const { serverId } = request.params as { serverId: string };
+
+    const members = await prisma.serverMember.findMany({
+      where: { serverId },
+      select: {
+        user: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: { joinedAt: "asc" },
+    });
+
+    return members.map((m) => m.user);
+  });
 }

@@ -1,7 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(npx prisma *)",
+      "Bash(pkill -9 node)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:3001/health)",
+      "Bash(curl -s http://127.0.0.1:3001/health)"
     ]
   }
 }
