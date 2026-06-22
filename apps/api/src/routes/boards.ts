@@ -1,6 +1,7 @@
-import { FastifyInstance } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
 import { checkPermission } from "../lib/permissions";
+import { authenticateRequest } from "../lib/auth";
 
 export async function boardRoutes(app: FastifyInstance) {
   // List all boards for a server (summary — no columns/tasks) with server owner
@@ -28,9 +29,14 @@ export async function boardRoutes(app: FastifyInstance) {
   });
 
   // Create a new board with default columns
-  app.post("/servers/:serverId/boards", async (request, reply) => {
+  app.post("/servers/:serverId/boards", { preHandler: authenticateRequest }, async (request, reply) => {
     const { serverId } = request.params as { serverId: string };
-    const { userId, name } = request.body as { userId: string; name: string };
+    const { name } = request.body as { name: string };
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
 
     const allowed = await checkPermission(userId, serverId, "canManageBoards");
     if (!allowed) {
@@ -87,9 +93,13 @@ export async function boardRoutes(app: FastifyInstance) {
   });
 
   // Delete a board (only creator or server owner can delete)
-  app.delete("/boards/:boardId", async (request, reply) => {
+  app.delete("/boards/:boardId", { preHandler: authenticateRequest }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string };
-    const { userId } = request.body as { userId: string };
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
 
     const board = await prisma.board.findUnique({
       where: { id: boardId },

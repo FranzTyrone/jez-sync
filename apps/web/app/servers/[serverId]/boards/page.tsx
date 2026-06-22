@@ -39,12 +39,13 @@ export default function BoardsPage() {
   }, [serverId]);
 
   async function createBoard() {
-    if (!newName.trim() || !session?.user?.id) return;
+    if (!newName.trim()) return;
     setSubmitting(true);
     const res = await fetch(`http://localhost:3001/servers/${serverId}/boards`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: session.user.id, name: newName.trim() }),
+      credentials: "include",
+      body: JSON.stringify({ name: newName.trim() }),
     });
     const board = await res.json();
     setSubmitting(false);
@@ -60,11 +61,10 @@ export default function BoardsPage() {
     if (!window.confirm("Are you sure you want to delete this board? This cannot be undone.")) {
       return;
     }
-    if (!session?.user?.id) return;
     const res = await fetch(`http://localhost:3001/boards/${boardId}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: session.user.id }),
+      credentials: "include",
     });
     if (res.ok) {
       setBoards((prev) => prev.filter((b) => b.id !== boardId));

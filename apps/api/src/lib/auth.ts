@@ -33,13 +33,16 @@ export async function authenticateRequest(
 
     // Decode the JWE token
     // In Auth.js v5, decode() requires the salt parameter equal to the cookie name
+    console.log(`[AUTH] Decoding token with salt="${cookieName}", secret length=${AUTH_SECRET.length}`);
+
     const decoded = await decode({
       token: sessionToken,
       secret: AUTH_SECRET,
       salt: cookieName as string,
     });
 
-    console.log("Decoded token payload:", JSON.stringify(decoded, null, 2));
+    console.log("[AUTH] ✅ Decoded token payload:", decoded);
+    console.log("[AUTH] Full payload JSON:", JSON.stringify(decoded, null, 2));
 
     if (!decoded) {
       console.warn("Failed to decode token");

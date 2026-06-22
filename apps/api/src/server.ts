@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import { Server } from "socket.io";
 import { prisma } from "./lib/prisma";
+import { authenticateRequest } from "./lib/auth";
 import { messageRoutes } from "./routes/messages";
 import { serverRoutes } from "./routes/servers";
 import { inviteRoutes } from "./routes/invites";
@@ -33,9 +34,13 @@ app.register(boardRoutes);
 
 const start = async () => {
   try {
+    // Register cookie support first (needed for auth middleware)
+    await app.register(import("@fastify/cookie"));
+
     await app.register(import("@fastify/cors"), {
       origin: "http://localhost:3000",
       methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+      credentials: true,
     });
 
     await app.listen({ port: 3001, host: "0.0.0.0" });
