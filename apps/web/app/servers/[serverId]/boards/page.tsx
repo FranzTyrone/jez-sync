@@ -13,6 +13,9 @@ type BoardSummary = {
   createdById: string;
   visibility: "PUBLIC" | "PRIVATE";
   _count: { tasks: number };
+  canAccess: boolean;
+  isLocked: boolean;
+  hasPendingRequest: boolean;
 };
 
 const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
@@ -382,27 +385,50 @@ export default function BoardsPage() {
             return (
               <div
                 key={board.id}
-                onClick={() => router.push(`/servers/${serverId}/boards/${board.id}`)}
+                onClick={() => {
+                  if (!board.isLocked) {
+                    router.push(`/servers/${serverId}/boards/${board.id}`);
+                  }
+                }}
                 style={{
                   width: "240px",
                   background: "#161d2a",
                   border: "1px solid #252f42",
                   borderRadius: "14px",
                   padding: "20px",
-                  cursor: "pointer",
+                  cursor: board.isLocked ? "not-allowed" : "pointer",
                   transition: "border-color 0.15s ease, box-shadow 0.15s ease",
                   position: "relative",
+                  opacity: board.isLocked ? 0.6 : 1,
                 }}
                 onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.borderColor = "#6366f1";
-                  (e.currentTarget as HTMLDivElement).style.boxShadow =
-                    "0 0 0 1px rgba(99,102,241,0.2)";
+                  if (!board.isLocked) {
+                    (e.currentTarget as HTMLDivElement).style.borderColor = "#6366f1";
+                    (e.currentTarget as HTMLDivElement).style.boxShadow =
+                      "0 0 0 1px rgba(99,102,241,0.2)";
+                  }
                 }}
                 onMouseLeave={(e) => {
                   (e.currentTarget as HTMLDivElement).style.borderColor = "#252f42";
                   (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
                 }}
               >
+                {board.isLocked && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "50%",
+                      left: "50%",
+                      transform: "translate(-50%, -50%)",
+                      fontSize: "48px",
+                      opacity: 0.8,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    🔒
+                  </div>
+                )}
+
                 <div
                   style={{
                     position: "absolute",

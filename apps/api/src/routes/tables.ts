@@ -10,6 +10,8 @@ export async function tableRoutes(app: FastifyInstance) {
     boardId: string
   ): Promise<{
     allowed: boolean;
+    canSeeBoard: boolean;
+    isLocked: boolean;
     board?: { id: string; serverId: string; createdById: string; visibility: string };
     server?: { id: string; ownerId: string };
     isCreatorOrOwner?: boolean;
@@ -19,7 +21,7 @@ export async function tableRoutes(app: FastifyInstance) {
       select: { id: true, serverId: true, createdById: true, visibility: true },
     });
     if (!board) {
-      return { allowed: false };
+      return { allowed: false, canSeeBoard: false, isLocked: false };
     }
 
     const server = await prisma.server.findUnique({
@@ -27,13 +29,29 @@ export async function tableRoutes(app: FastifyInstance) {
       select: { id: true, ownerId: true },
     });
     if (!server) {
-      return { allowed: false };
+      return { allowed: false, canSeeBoard: false, isLocked: false };
     }
 
     const isCreatorOrOwner = userId === board.createdById || userId === server.ownerId;
-    const allowed = board.visibility === "PUBLIC" || isCreatorOrOwner;
 
-    return { allowed, board, server, isCreatorOrOwner };
+    // Check if user is in the access list (for PRIVATE boards)
+    const inAccessList = board.visibility === "PRIVATE"
+      ? await prisma.boardAccess.findUnique({
+          where: { boardId_userId: { boardId, userId } }
+        })
+      : true;
+
+    const allowed = board.visibility === "PUBLIC" || isCreatorOrOwner || !!inAccessList;
+    const isLocked = board.visibility === "PRIVATE" && !isCreatorOrOwner && !inAccessList;
+
+    return {
+      allowed,
+      canSeeBoard: true,  // All members can see private boards (now)
+      isLocked,
+      board,
+      server,
+      isCreatorOrOwner
+    };
   }
 
   // Helper: resolve and authorize (userId must be creator or server owner)
@@ -315,7 +333,13 @@ export async function tableRoutes(app: FastifyInstance) {
 
     // Check visibility
     const access = await canAccessBoard(userId, boardId);
-    if (!access.allowed) return reply.status(404).send({ error: "Board not found" });
+    if (!access.board) return reply.status(404).send({ error: "Board not found" });
+    if (!access.allowed) {
+      if (access.isLocked) {
+        return reply.status(403).send({ error: "Access denied" });
+      }
+      return reply.status(404).send({ error: "Board not found" });
+    }
 
     const board = await prisma.board.findUnique({
       where: { id: boardId },

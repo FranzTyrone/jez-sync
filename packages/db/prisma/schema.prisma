@@ -22,6 +22,8 @@ model User {
   sessions            Session[]
   annotationSessions  AnnotationSession[]
   reactions           Reaction[]
+  boardAccessList     BoardAccess[]         @relation("boardAccessList")
+  boardAccessRequests BoardAccessRequest[]  @relation("boardAccessRequests")
 }
 
 model Session {
@@ -163,8 +165,54 @@ model Board {
   tableItems            TableItem[]
   columnDefinitions     ColumnDefinition[]
   cellValues            CellValue[]
+  // Access control relations
+  accessList            BoardAccess[]
+  accessRequests        BoardAccessRequest[]
+  shareLinks            BoardShareLink[]
   @@index([serverId])
 }
+
+// ─── BOARD ACCESS CONTROL ───────────────────────────────
+
+model BoardAccess {
+  id        String   @id @default(uuid())
+  boardId   String
+  userId    String
+  grantedAt DateTime @default(now())
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user      User     @relation("boardAccessList", fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([boardId, userId])
+  @@index([boardId])
+  @@index([userId])
+}
+
+model BoardAccessRequest {
+  id        String   @id @default(uuid())
+  boardId   String
+  userId    String
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  respondedAt DateTime?
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user      User     @relation("boardAccessRequests", fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([boardId, userId])
+  @@index([boardId])
+  @@index([userId])
+  @@index([status])
+}
+
+model BoardShareLink {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  boardId   String
+  createdBy String
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  @@index([boardId])
+}
+
+// ─── COLUMNS ────────────────────────────────────────────
 
 model Column {
   id       String @id @default(uuid())

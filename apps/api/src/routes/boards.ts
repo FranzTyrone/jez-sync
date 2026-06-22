@@ -58,14 +58,24 @@ export async function boardRoutes(app: FastifyInstance) {
       orderBy: { createdAt: "asc" },
       include: {
         _count: { select: { tasks: true } },
+        accessRequests: {
+          where: { userId },  // Check if user has pending request
+          select: { status: true }
+        }
       },
     });
 
-    // Filter: show board if PUBLIC or if PRIVATE and user is creator/owner
-    const boards = allBoards.filter((board: any) => {
-      if (board.visibility === "PUBLIC") return true;
-      // PRIVATE: only show if user is creator or server owner
-      return userId === board.createdById || userId === server.ownerId;
+    // Return ALL boards with access status flags (no filtering)
+    const boards = allBoards.map((board: any) => {
+      const isCreatorOrOwner = userId === board.createdById || userId === server.ownerId;
+      const hasPendingRequest = board.accessRequests.some((r: any) => r.status === "PENDING");
+
+      return {
+        ...board,
+        canAccess: board.visibility === "PUBLIC" || isCreatorOrOwner,  // Can open
+        isLocked: board.visibility === "PRIVATE" && !isCreatorOrOwner,
+        hasPendingRequest,
+      };
     });
 
     return { boards, ownerId: server.ownerId };
@@ -146,7 +156,13 @@ export async function boardRoutes(app: FastifyInstance) {
 
     // Check visibility
     const access = await canAccessBoard(userId, boardId);
+    if (!access.board) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
     if (!access.allowed) {
+      if (access.isLocked) {
+        return reply.status(403).send({ error: "Access denied" });
+      }
       return reply.status(404).send({ error: "Board not found" });
     }
 
