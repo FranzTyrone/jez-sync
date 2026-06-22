@@ -5,6 +5,7 @@ import * as mediasoupClient from "mediasoup-client";
 import { getSocket, resetSocket } from "@/lib/socket";
 import AnnotationCanvas from "./AnnotationCanvas";
 import { useSession } from "next-auth/react";
+import { useVoice } from "@/lib/VoiceContext";
 
 type Props = {
   channelId: string;
@@ -14,6 +15,7 @@ type Participant = {
   socketId: string;
   userName: string;
   isMuted?: boolean;
+  isDeafened?: boolean;
 };
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -181,10 +183,11 @@ function IconBtn({
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function VoiceChannel({ channelId }: Props) {
+  const { actionsRef, setVoiceState, voicePrefs, setVoicePrefs } = useVoice();
+
   const [connected, setConnected] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isDeafened, setIsDeafened] = useState(false);
   const [isPushToTalk, setIsPushToTalk] = useState(false);
+  const { isMuted, isDeafened } = voicePrefs;
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [isSharing, setIsSharing] = useState(false);
   const [isSharer, setIsSharer] = useState(false);
@@ -198,6 +201,7 @@ export default function VoiceChannel({ channelId }: Props) {
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [videoRect, setVideoRect] = useState({ offsetX: 0, offsetY: 0, width: 640, height: 360 });
   const { data: session } = useSession();
   const myColor = "#6366f1";
 
@@ -207,6 +211,7 @@ export default function VoiceChannel({ channelId }: Props) {
   const recvTransportRef = useRef<mediasoupClient.types.Transport | null>(null);
   const audioContainerRef = useRef<HTMLDivElement>(null);
   const screenContainerRef = useRef<HTMLDivElement>(null);
+  const screenVideoRef = useRef<HTMLVideoElement>(null);
   const producerRef = useRef<mediasoupClient.types.Producer | null>(null);
   const screenProducerRef = useRef<mediasoupClient.types.Producer | null>(null);
   const camProducerRef = useRef<mediasoupClient.types.Producer | null>(null);
@@ -260,7 +265,8 @@ export default function VoiceChannel({ channelId }: Props) {
     } else {
       const audioEl = document.createElement("audio");
       audioEl.srcObject = stream;
-      audioEl.autoplay = true;
+      audioEl.autoplay = !isDeafened;
+      if (isDeafened) consumer.pause();
       audioContainerRef.current?.appendChild(audioEl);
     }
   }
@@ -281,6 +287,10 @@ export default function VoiceChannel({ channelId }: Props) {
       deviceRef.current = device;
 
       const sendTransportResponse = await emitWithAck("voice:createTransport", { channelId });
+      if (sendTransportResponse.error) {
+        console.error("Failed to create send transport:", sendTransportResponse.error);
+        return;
+      }
       const sendTransport = device.createSendTransport(sendTransportResponse.params);
 
       sendTransport.on("connect", async (params: any, callback: any, errback: any) => {
@@ -310,7 +320,22 @@ export default function VoiceChannel({ channelId }: Props) {
       const producer = await sendTransport.produce({ track: audioTrack });
       producerRef.current = producer;
 
+      // Apply pre-join mute/deafen preferences immediately.
+      // isDeafened implies muted, so either pref pauses the mic producer.
+      if (isMuted || isDeafened) {
+        producer.pause();
+        socket.emit("voice:muteStateChanged", { channelId, isMuted: true });
+        // Ensure isMuted pref is consistent if we're joining deafened-but-not-muted.
+        if (isDeafened && !isMuted) {
+          setVoicePrefs((p) => ({ ...p, isMuted: true }));
+        }
+      }
+
       const recvTransportResponse = await emitWithAck("voice:createTransport", { channelId });
+      if (recvTransportResponse.error) {
+        console.error("Failed to create recv transport:", recvTransportResponse.error);
+        return;
+      }
       const recvTransport = device.createRecvTransport(recvTransportResponse.params);
       recvTransportRef.current = recvTransport;
 
@@ -355,21 +380,31 @@ export default function VoiceChannel({ channelId }: Props) {
         );
       });
 
+      socket.on("voice:participantDeafenChanged", (data: { socketId: string; isDeafened: boolean }) => {
+        setParticipants((prev) =>
+          prev.map((p) => (p.socketId === data.socketId ? { ...p, isDeafened: data.isDeafened } : p))
+        );
+      });
+
       socket.on("annotation:requestReceived", (data: { requesterSocketId: string; requesterName: string }) => {
         setPendingRequests((prev) => [...prev, { socketId: data.requesterSocketId, name: data.requesterName }]);
       });
 
       socket.on("annotation:granted", () => setCanAnnotate(true));
       socket.on("annotation:denied", () => alert("Annotation request denied"));
-      socket.on("annotation:revoked", () => setCanAnnotate(false));
+      socket.on("annotation:clearAll", () => setCanAnnotate(false));
 
       const producersResponse = await emitWithAck("voice:getProducers", { channelId });
-      for (const p of producersResponse.producers) {
-        await consumeProducer(p.producerId, p.socketId, p.appData?.mediaTag);
+      if (!producersResponse.error) {
+        for (const p of producersResponse.producers) {
+          await consumeProducer(p.producerId, p.socketId, p.appData?.mediaTag);
+        }
       }
 
       const participantsResponse = await emitWithAck("voice:getParticipants", { channelId });
-      setParticipants(participantsResponse.participants);
+      if (!participantsResponse.error) {
+        setParticipants(participantsResponse.participants);
+      }
 
       setConnected(true);
     } catch (err) {
@@ -387,6 +422,8 @@ export default function VoiceChannel({ channelId }: Props) {
     localScreenStream?.getTracks().forEach((t) => t.stop());
     if (audioContainerRef.current) audioContainerRef.current.innerHTML = "";
     resetSocket();
+    setVoiceState(null);
+    actionsRef.current = null;
     setConnected(false);
     setIsSharing(false);
     setIsSharer(false);
@@ -406,17 +443,53 @@ export default function VoiceChannel({ channelId }: Props) {
     if (!producer) return;
     const muting = !isMuted;
     muting ? producer.pause() : producer.resume();
-    setIsMuted(muting);
+    if (!muting && isDeafened) {
+      // Unmuting while deafened: exit deafen too, mirroring Discord's behavior.
+      consumersRef.current.forEach((c) => c.resume());
+      setVoicePrefs((p) => ({ ...p, isMuted: false, isDeafened: false }));
+      socket.emit("voice:deafenStateChanged", { channelId, isDeafened: false });
+    } else {
+      setVoicePrefs((p) => ({ ...p, isMuted: muting }));
+    }
     socket.emit("voice:muteStateChanged", { channelId, isMuted: muting });
   }
 
   function toggleDeafen() {
     const deafening = !isDeafened;
     consumersRef.current.forEach((c) => (deafening ? c.pause() : c.resume()));
-    if (deafening && !isMuted) toggleMute();
-    setIsDeafened(deafening);
+    if (deafening) {
+      // Directly pause the producer and force isMuted:true in a single atomic update.
+      // Never delegate to toggleMute() here — it reads isMuted from the closure and
+      // toggles it, which is wrong if voicePrefs.isMuted was set from outside
+      // VoiceChannel (sidebar pre-join path, join-time fix) without the producer
+      // actually being paused, breaking the guard and toggle-direction both.
+      const producer = producerRef.current;
+      if (producer) producer.pause();
+      setVoicePrefs((p) => ({ ...p, isDeafened: true, isMuted: true }));
+      socket.emit("voice:muteStateChanged", { channelId, isMuted: true });
+    } else {
+      setVoicePrefs((p) => ({ ...p, isDeafened: false }));
+    }
     socket.emit("voice:deafenStateChanged", { channelId, isDeafened: deafening });
   }
+
+  // Keep actions ref current on every render so the sidebar always calls the latest closure.
+  actionsRef.current = {
+    toggleMute,
+    toggleDeafen,
+    toggleShare: isSharing ? stopScreenShare : startScreenShare,
+    leaveVoice,
+  };
+
+  // Sync connection/sharing state to context so the sidebar panel stays accurate.
+  useEffect(() => {
+    if (connected) {
+      setVoiceState({ isSharing, channelId });
+      setVoicePrefs((p) => ({ ...p, lastChannelId: channelId }));
+    } else {
+      setVoiceState(null);
+    }
+  }, [connected, isSharing, channelId]);
 
   async function toggleCam() {
     if (isCamOn) {
@@ -576,6 +649,8 @@ export default function VoiceChannel({ channelId }: Props) {
       consumersRef.current.forEach((c) => c.close());
       consumersRef.current.clear();
       resetSocket();
+      setVoiceState(null);
+      actionsRef.current = null;
     };
   }, []);
 
@@ -584,20 +659,20 @@ export default function VoiceChannel({ channelId }: Props) {
     const producer = producerRef.current;
     if (!producer) return;
     producer.pause();
-    setIsMuted(true);
+    setVoicePrefs((p) => ({ ...p, isMuted: true }));
     socket.emit("voice:muteStateChanged", { channelId, isMuted: true });
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.code === "Space" && producerRef.current) {
         producerRef.current.resume();
-        setIsMuted(false);
+        setVoicePrefs((p) => ({ ...p, isMuted: false }));
         socket.emit("voice:muteStateChanged", { channelId, isMuted: false });
       }
     }
     function onKeyUp(e: KeyboardEvent) {
       if (e.code === "Space" && producerRef.current) {
         producerRef.current.pause();
-        setIsMuted(true);
+        setVoicePrefs((p) => ({ ...p, isMuted: true }));
         socket.emit("voice:muteStateChanged", { channelId, isMuted: true });
       }
     }
@@ -608,6 +683,39 @@ export default function VoiceChannel({ channelId }: Props) {
       window.removeEventListener("keyup", onKeyUp);
     };
   }, [isPushToTalk, connected]);
+
+  useEffect(() => {
+    const container = screenContainerRef.current;
+    const video = screenVideoRef.current;
+    if (!container) return;
+
+    function update() {
+      const cw = container!.clientWidth;
+      const ch = container!.clientHeight;
+      const vw = video?.videoWidth ?? 0;
+      const vh = video?.videoHeight ?? 0;
+      if (!vw || !vh) return;
+      const scale = Math.min(cw / vw, ch / vh);
+      const rw = vw * scale;
+      const rh = vh * scale;
+      setVideoRect({
+        offsetX: (cw - rw) / 2,
+        offsetY: (ch - rh) / 2,
+        width: rw,
+        height: rh,
+      });
+    }
+
+    const ro = new ResizeObserver(update);
+    ro.observe(container);
+    if (video) video.addEventListener("loadedmetadata", update);
+    update();
+
+    return () => {
+      ro.disconnect();
+      if (video) video.removeEventListener("loadedmetadata", update);
+    };
+  }, [screenStream, localScreenStream, isWatchingShare, canAnnotate]);
 
   // ─── Pre-join screen ─────────────────────────────────────────────────────────
   if (!connected) {
@@ -885,7 +993,7 @@ export default function VoiceChannel({ channelId }: Props) {
                   <Avatar name={p.userName} />
                 )}
                 <NameTag>
-                  {p.userName} {p.isMuted ? "🔇" : ""}
+                  {p.userName} {p.isDeafened ? "🔕" : p.isMuted ? "🔇" : ""}
                 </NameTag>
               </div>
             );
@@ -912,6 +1020,7 @@ export default function VoiceChannel({ channelId }: Props) {
           {(screenStream || localScreenStream) && (
             <video
               ref={(el) => {
+                screenVideoRef.current = el;
                 const src = screenStream || localScreenStream;
                 if (el && el.srcObject !== src) el.srcObject = src;
               }}
@@ -928,14 +1037,20 @@ export default function VoiceChannel({ channelId }: Props) {
               }}
             />
           )}
-          <div style={{ position: "absolute", inset: 0 }}>
+          <div style={{
+            position: "absolute",
+            left: videoRect.offsetX,
+            top: videoRect.offsetY,
+            width: videoRect.width,
+            height: videoRect.height,
+          }}>
             <AnnotationCanvas
               channelId={channelId}
               canDraw={canAnnotate && !isSharer}
               myColor={myColor}
               myUserId={session?.user?.id || "unknown"}
-              containerWidth={640}
-              containerHeight={360}
+              containerWidth={Math.round(videoRect.width)}
+              containerHeight={Math.round(videoRect.height)}
             />
           </div>
 

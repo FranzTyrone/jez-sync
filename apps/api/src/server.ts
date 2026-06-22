@@ -424,6 +424,14 @@ const start = async () => {
           }
         }
 
+        // Close all WebRtcTransports to return their ports to the pool.
+        // Without this, every join/leave cycle leaks ports until the range is exhausted.
+        if (socket.data.transports) {
+          for (const transport of Object.values(socket.data.transports) as any[]) {
+            transport.close();
+          }
+        }
+
         if (socket.data.channelId) {
           socket.to(`voice:${socket.data.channelId}`).emit("voice:participantLeft", {
             socketId: socket.id,

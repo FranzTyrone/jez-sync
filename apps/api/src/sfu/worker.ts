@@ -6,7 +6,7 @@ export async function createWorker() {
   worker = await mediasoup.createWorker({
     logLevel: "warn",
     rtcMinPort: 40000,
-    rtcMaxPort: 40100,
+    rtcMaxPort: 49999,
   });
 
   worker.on("died", () => {

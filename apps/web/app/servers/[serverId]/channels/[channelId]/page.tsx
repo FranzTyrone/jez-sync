@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useParams } from "next/navigation";
 import { getSocket } from "@/lib/socket";
 import VoiceChannel from "@/components/voice/VoiceChannel";
+import { useVoice } from "@/lib/VoiceContext";
 
 type Message = {
   id: string;
@@ -20,6 +21,7 @@ export default function ChannelPage() {
   const channelId = params.channelId as string;
   const serverId = params.serverId as string;
   const socket = getSocket();
+  const { voiceState } = useVoice();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
@@ -175,18 +177,33 @@ export default function ChannelPage() {
           >
             {channelName || "..."}
           </h1>
-          <span
-            style={{
-              fontSize: "11px",
-              color: connected ? "#10b981" : "#ef4444",
-              background: connected ? "#0d2b20" : "#2d1515",
-              padding: "2px 8px",
-              borderRadius: "10px",
-              fontWeight: 600,
-            }}
-          >
-            {connected ? "Connected" : "Disconnected"}
-          </span>
+          {channelType === "VOICE" ? (
+            <span
+              style={{
+                fontSize: "11px",
+                color: voiceState?.channelId === channelId ? "#10b981" : "#4b5a72",
+                background: voiceState?.channelId === channelId ? "#0d2b20" : "transparent",
+                padding: "2px 8px",
+                borderRadius: "10px",
+                fontWeight: 600,
+              }}
+            >
+              {voiceState?.channelId === channelId ? "Voice Connected" : "Not in Voice"}
+            </span>
+          ) : (
+            <span
+              style={{
+                fontSize: "11px",
+                color: connected ? "#10b981" : "#ef4444",
+                background: connected ? "#0d2b20" : "#2d1515",
+                padding: "2px 8px",
+                borderRadius: "10px",
+                fontWeight: 600,
+              }}
+            >
+              {connected ? "Connected" : "Disconnected"}
+            </span>
+          )}
         </div>
 
         <button

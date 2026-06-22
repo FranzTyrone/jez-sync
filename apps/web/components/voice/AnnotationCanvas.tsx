@@ -236,7 +236,7 @@ export default function AnnotationCanvas({
   }
 
   return (
-    <div style={{ position: "relative" }}>
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
       {canDraw && (
         <div style={{ display: "flex", gap: "4px", marginBottom: "4px" }}>
           <button onClick={() => setTool("pen")} style={{ fontWeight: tool === "pen" ? "bold" : "normal" }}>
@@ -258,8 +258,8 @@ export default function AnnotationCanvas({
           position: "absolute",
           top: 0,
           left: 0,
-          width: containerWidth,
-          height: containerHeight,
+          width: "100%",
+          height: "100%",
           pointerEvents: canDraw ? "auto" : "none",
           cursor: canDraw ? "crosshair" : "default",
           zIndex: 10,
