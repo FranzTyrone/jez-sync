@@ -10,6 +10,8 @@ export async function boardRoutes(app: FastifyInstance) {
     boardId: string
   ): Promise<{
     allowed: boolean;
+    canSeeBoard: boolean;
+    isLocked: boolean;
     board?: { id: string; serverId: string; createdById: string; visibility: string };
     server?: { id: string; ownerId: string };
     isCreatorOrOwner?: boolean;
@@ -19,7 +21,7 @@ export async function boardRoutes(app: FastifyInstance) {
       select: { id: true, serverId: true, createdById: true, visibility: true },
     });
     if (!board) {
-      return { allowed: false };
+      return { allowed: false, canSeeBoard: false, isLocked: false };
     }
 
     const server = await prisma.server.findUnique({
@@ -27,13 +29,29 @@ export async function boardRoutes(app: FastifyInstance) {
       select: { id: true, ownerId: true },
     });
     if (!server) {
-      return { allowed: false };
+      return { allowed: false, canSeeBook: false, isLocked: false };
     }
 
     const isCreatorOrOwner = userId === board.createdById || userId === server.ownerId;
-    const allowed = board.visibility === "PUBLIC" || isCreatorOrOwner;
 
-    return { allowed, board, server, isCreatorOrOwner };
+    // Check if user is in the access list (for PRIVATE boards)
+    const inAccessList = board.visibility === "PRIVATE"
+      ? await prisma.boardAccess.findUnique({
+          where: { boardId_userId: { boardId, userId } }
+        })
+      : true;
+
+    const allowed = board.visibility === "PUBLIC" || isCreatorOrOwner || !!inAccessList;
+    const isLocked = board.visibility === "PRIVATE" && !isCreatorOrOwner && !inAccessList;
+
+    return {
+      allowed,
+      canSeeBoard: true,  // All members can see private boards (now)
+      isLocked,
+      board,
+      server,
+      isCreatorOrOwner
+    };
   }
   // List all boards for a server (summary — no columns/tasks) with server owner
   app.get("/servers/:serverId/boards", { preHandler: authenticateRequest }, async (request, reply) => {
