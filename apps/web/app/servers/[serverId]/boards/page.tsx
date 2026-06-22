@@ -20,6 +20,141 @@ type BoardSummary = {
 
 const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
+function PendingRequestsSection({
+  boards,
+  session,
+  ownerId,
+  getPendingRequests,
+  onApprove,
+  onDeny,
+}: {
+  boards: BoardSummary[];
+  session: any;
+  ownerId: string;
+  getPendingRequests: (boardId: string) => Promise<any[]>;
+  onApprove: (boardId: string, requestId: string) => Promise<void>;
+  onDeny: (boardId: string, requestId: string) => Promise<void>;
+}) {
+  const [requestsByBoard, setRequestsByBoard] = useState<{ [key: string]: any[] }>({});
+  const [loadingBoard, setLoadingBoard] = useState<string | null>(null);
+
+  const manageableBoards = boards.filter((b) => {
+    const canManage = session?.user?.id === b.createdById || session?.user?.id === ownerId;
+    return canManage && b.visibility === "PRIVATE";
+  });
+
+  useEffect(() => {
+    async function loadRequests() {
+      for (const board of manageableBoards) {
+        const requests = await getPendingRequests(board.id);
+        if (requests.length > 0) {
+          setRequestsByBoard((prev) => ({
+            ...prev,
+            [board.id]: requests,
+          }));
+        }
+      }
+    }
+    if (manageableBoards.length > 0) {
+      loadRequests();
+    }
+  }, [manageableBoards]);
+
+  if (manageableBoards.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: "40px" }}>
+      <h2 style={{ color: "#f3f4f6", fontSize: "18px", fontWeight: 600, marginBottom: "24px" }}>
+        Pending Access Requests
+      </h2>
+      {manageableBoards.map((board) => {
+        const requests = requestsByBoard[board.id] || [];
+        if (requests.length === 0) return null;
+        return (
+          <div
+            key={board.id}
+            style={{
+              background: "#161d2a",
+              border: "1px solid #252f42",
+              borderRadius: "12px",
+              padding: "20px",
+              marginBottom: "16px",
+            }}
+          >
+            <h3 style={{ color: "#e5e7eb", fontSize: "15px", fontWeight: 600, marginBottom: "16px", margin: "0 0 16px" }}>
+              {board.name} ({requests.length})
+            </h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {requests.map((req: any) => (
+                <div
+                  key={req.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "12px",
+                    background: "#0d1117",
+                    borderRadius: "8px",
+                    fontSize: "14px",
+                  }}
+                >
+                  <span style={{ color: "#d1d5db" }}>{req.userName}</span>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      onClick={() => onApprove(board.id, req.id)}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "#fff",
+                        background: "#10b981",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        transition: "background 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "#059669";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "#10b981";
+                      }}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => onDeny(board.id, req.id)}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "#fff",
+                        background: "#ef4444",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        transition: "background 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "#dc2626";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "#ef4444";
+                      }}
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function BoardsPage() {
   const { data: session } = useSession();
   const params = useParams();
@@ -105,6 +240,53 @@ export default function BoardsPage() {
       day: "numeric",
       year: "numeric",
     });
+  }
+
+  async function requestAccess(boardId: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    const res = await fetch(`${getApiUrl()}/boards/${boardId}/access/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: 'include',
+    });
+    if (res.ok) {
+      setBoards((prev) =>
+        prev.map((b) =>
+          b.id === boardId ? { ...b, hasPendingRequest: true } : b
+        )
+      );
+    }
+  }
+
+  async function getPendingRequests(boardId: string) {
+    const res = await fetch(`${getApiUrl()}/boards/${boardId}/access/requests`, {
+      credentials: 'include',
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data;
+  }
+
+  async function approveRequest(boardId: string, requestId: string) {
+    const res = await fetch(`${getApiUrl()}/boards/${boardId}/access/requests/${requestId}/approve`, {
+      method: "POST",
+      credentials: 'include',
+    });
+    if (res.ok) {
+      // Reload the page to update pending requests list
+      window.location.reload();
+    }
+  }
+
+  async function denyRequest(boardId: string, requestId: string) {
+    const res = await fetch(`${getApiUrl()}/boards/${boardId}/access/requests/${requestId}/deny`, {
+      method: "POST",
+      credentials: 'include',
+    });
+    if (res.ok) {
+      // Reload the page to update pending requests list
+      window.location.reload();
+    }
   }
 
   if (!session) {
@@ -319,6 +501,16 @@ export default function BoardsPage() {
         </div>
       )}
 
+      {/* Pending requests section - shown for creators/owners only */}
+      <PendingRequestsSection
+        boards={boards ?? []}
+        session={session}
+        ownerId={ownerId}
+        getPendingRequests={getPendingRequests}
+        onApprove={approveRequest}
+        onDeny={denyRequest}
+      />
+
       {/* Board grid */}
       {loading ? (
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
@@ -426,6 +618,61 @@ export default function BoardsPage() {
                     }}
                   >
                     🔒
+                  </div>
+                )}
+
+                {board.isLocked && !canDelete && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: "12px",
+                      left: "50%",
+                      transform: "translateX(-50%)",
+                      width: "calc(100% - 24px)",
+                    }}
+                  >
+                    {board.hasPendingRequest ? (
+                      <button
+                        disabled
+                        style={{
+                          width: "100%",
+                          padding: "8px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#9ca3af",
+                          background: "#252f42",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "default",
+                        }}
+                      >
+                        Pending
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => requestAccess(board.id, e)}
+                        style={{
+                          width: "100%",
+                          padding: "8px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#fff",
+                          background: "#6366f1",
+                          border: "none",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          transition: "background 0.15s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "#7c7ff2";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "#6366f1";
+                        }}
+                      >
+                        Request Access
+                      </button>
+                    )}
                   </div>
                 )}
 

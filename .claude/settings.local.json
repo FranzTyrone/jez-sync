@@ -21,7 +21,8 @@
       "Bash(curl -s -m 5 http://localhost:3001/health)",
       "Bash(curl -s http://localhost:3000/servers)",
       "Bash(pkill -9 npm)",
-      "Bash(pkill -9 tsx)"
+      "Bash(pkill -9 tsx)",
+      "Bash(pkill -9 -f \"npm|node|tsx\")"
     ]
   }
 }

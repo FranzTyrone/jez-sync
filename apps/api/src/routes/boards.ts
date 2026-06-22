@@ -298,6 +298,217 @@ export async function boardRoutes(app: FastifyInstance) {
     return updated;
   });
 
+  // POST /boards/:boardId/access/request - Request access to a locked board (any server member)
+  app.post("/boards/:boardId/access/request", { preHandler: authenticateRequest }, async (request, reply) => {
+    const { boardId } = request.params as { boardId: string };
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+
+    // Check visibility and access
+    const access = await canAccessBoard(userId, boardId);
+    if (!access.board) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
+
+    // If user already has access (PUBLIC or in BoardAccess), reject
+    if (access.allowed) {
+      return reply.status(400).send({ error: "Already have access to this board" });
+    }
+
+    // Only locked boards can be requested
+    if (!access.isLocked) {
+      return reply.status(400).send({ error: "Board is not locked" });
+    }
+
+    // UPSERT: no row → create PENDING; DENIED → flip to PENDING; PENDING → no-op
+    const request_result = await prisma.boardAccessRequest.upsert({
+      where: { boardId_userId: { boardId, userId } },
+      create: {
+        boardId,
+        userId,
+        status: "PENDING",
+      },
+      update: {
+        status: "PENDING",  // Flip DENIED → PENDING, or stays PENDING
+      },
+    });
+
+    return { status: request_result.status };
+  });
+
+  // GET /boards/:boardId/access/requests - List pending requests (creator/owner only)
+  app.get("/boards/:boardId/access/requests", { preHandler: authenticateRequest }, async (request, reply) => {
+    const { boardId } = request.params as { boardId: string };
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { serverId: true, createdById: true },
+    });
+
+    if (!board) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
+
+    const server = await prisma.server.findUnique({
+      where: { id: board.serverId },
+      select: { ownerId: true },
+    });
+
+    if (!server) {
+      return reply.status(404).send({ error: "Server not found" });
+    }
+
+    // Strict creator-or-owner check
+    const isCreator = userId === board.createdById;
+    const isOwner = userId === server.ownerId;
+
+    if (!isCreator && !isOwner) {
+      return reply.status(403).send({ error: "Not authorized" });
+    }
+
+    // List PENDING requests with requester names
+    const requests = await prisma.boardAccessRequest.findMany({
+      where: { boardId, status: "PENDING" },
+      include: {
+        user: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return requests.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      userName: r.user.name,
+      createdAt: r.createdAt,
+    }));
+  });
+
+  // POST /boards/:boardId/access/requests/:requestId/approve - Approve a request (creator/owner only)
+  app.post("/boards/:boardId/access/requests/:requestId/approve", { preHandler: authenticateRequest }, async (request, reply) => {
+    const { boardId, requestId } = request.params as { boardId: string; requestId: string };
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { serverId: true, createdById: true },
+    });
+
+    if (!board) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
+
+    const server = await prisma.server.findUnique({
+      where: { id: board.serverId },
+      select: { ownerId: true },
+    });
+
+    if (!server) {
+      return reply.status(404).send({ error: "Server not found" });
+    }
+
+    // Strict creator-or-owner check
+    const isCreator = userId === board.createdById;
+    const isOwner = userId === server.ownerId;
+
+    if (!isCreator && !isOwner) {
+      return reply.status(403).send({ error: "Not authorized" });
+    }
+
+    // Find the request
+    const accessRequest = await prisma.boardAccessRequest.findUnique({
+      where: { id: requestId },
+    });
+
+    if (!accessRequest || accessRequest.boardId !== boardId) {
+      return reply.status(404).send({ error: "Request not found" });
+    }
+
+    // Transaction: approve request + add to BoardAccess
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedRequest = await tx.boardAccessRequest.update({
+        where: { id: requestId },
+        data: { status: "APPROVED", respondedAt: new Date() },
+      });
+
+      const access = await tx.boardAccess.upsert({
+        where: { boardId_userId: { boardId, userId: accessRequest.userId } },
+        create: {
+          boardId,
+          userId: accessRequest.userId,
+        },
+        update: {},
+      });
+
+      return { request: updatedRequest, access };
+    });
+
+    return { status: result.request.status };
+  });
+
+  // POST /boards/:boardId/access/requests/:requestId/deny - Deny a request (creator/owner only)
+  app.post("/boards/:boardId/access/requests/:requestId/deny", { preHandler: authenticateRequest }, async (request, reply) => {
+    const { boardId, requestId } = request.params as { boardId: string; requestId: string };
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { serverId: true, createdById: true },
+    });
+
+    if (!board) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
+
+    const server = await prisma.server.findUnique({
+      where: { id: board.serverId },
+      select: { ownerId: true },
+    });
+
+    if (!server) {
+      return reply.status(404).send({ error: "Server not found" });
+    }
+
+    // Strict creator-or-owner check
+    const isCreator = userId === board.createdById;
+    const isOwner = userId === server.ownerId;
+
+    if (!isCreator && !isOwner) {
+      return reply.status(403).send({ error: "Not authorized" });
+    }
+
+    // Find and deny the request
+    const accessRequest = await prisma.boardAccessRequest.findUnique({
+      where: { id: requestId },
+    });
+
+    if (!accessRequest || accessRequest.boardId !== boardId) {
+      return reply.status(404).send({ error: "Request not found" });
+    }
+
+    const updated = await prisma.boardAccessRequest.update({
+      where: { id: requestId },
+      data: { status: "DENIED", respondedAt: new Date() },
+    });
+
+    return { status: updated.status };
+  });
+
   // Create a new task on a board
   app.post("/boards/:boardId/tasks", { preHandler: authenticateRequest }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string };

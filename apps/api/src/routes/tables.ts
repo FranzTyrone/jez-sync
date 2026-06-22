@@ -85,6 +85,48 @@ export async function tableRoutes(app: FastifyInstance) {
     return { board, server, authorized: true };
   }
 
+  // Helper for write operations: allow creator/owner OR approved users
+  async function authorizeForWrite(userId: string, boardId: string, reply: any) {
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { serverId: true, createdById: true, visibility: true },
+    });
+
+    if (!board) {
+      reply.status(404).send({ error: "Board not found" });
+      return null;
+    }
+
+    const server = await prisma.server.findUnique({
+      where: { id: board.serverId },
+      select: { ownerId: true },
+    });
+
+    if (!server) {
+      reply.status(404).send({ error: "Server not found" });
+      return null;
+    }
+
+    const isCreator = userId === board.createdById;
+    const isOwner = userId === server.ownerId;
+
+    // For PRIVATE boards, also check if user is in BoardAccess
+    const inAccessList = board.visibility === "PRIVATE"
+      ? await prisma.boardAccess.findUnique({
+          where: { boardId_userId: { boardId, userId } }
+        })
+      : true;
+
+    const canWrite = isCreator || isOwner || !!inAccessList;
+
+    if (!canWrite) {
+      reply.status(403).send({ error: "Not authorized to modify this board" });
+      return null;
+    }
+
+    return { board, server, authorized: true };
+  }
+
   // POST /boards/:boardId/groups - create group
   app.post("/boards/:boardId/groups", { preHandler: authenticateRequest }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string };
@@ -92,7 +134,7 @@ export async function tableRoutes(app: FastifyInstance) {
 
     if (!userId) return reply.status(401).send({ error: "Unauthorized" });
 
-    const auth = await authorize(userId, boardId, reply);
+    const auth = await authorizeForWrite(userId, boardId, reply);
     if (!auth) return;
 
     const { name } = request.body as { name: string };
@@ -167,7 +209,7 @@ export async function tableRoutes(app: FastifyInstance) {
 
     if (!userId) return reply.status(401).send({ error: "Unauthorized" });
 
-    const auth = await authorize(userId, boardId, reply);
+    const auth = await authorizeForWrite(userId, boardId, reply);
     if (!auth) return;
 
     const { title, groupId } = request.body as { title: string; groupId?: string };
@@ -217,7 +259,7 @@ export async function tableRoutes(app: FastifyInstance) {
 
     if (!userId) return reply.status(401).send({ error: "Unauthorized" });
 
-    const auth = await authorize(userId, boardId, reply);
+    const auth = await authorizeForWrite(userId, boardId, reply);
     if (!auth) return;
 
     const { name, type, settings } = request.body as {
