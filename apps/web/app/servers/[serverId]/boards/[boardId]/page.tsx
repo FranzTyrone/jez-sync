@@ -613,19 +613,19 @@ export default function BoardPage() {
                             // User-defined status options
                             settings = {
                               options: [
-                                { id: "opt-todo", label: "To Do" },
-                                { id: "opt-in-progress", label: "In Progress" },
-                                { id: "opt-done", label: "Done" },
+                                { id: "opt-todo", label: "To Do", color: "#8b5cf6" },
+                                { id: "opt-in-progress", label: "In Progress", color: "#3b82f6" },
+                                { id: "opt-done", label: "Done", color: "#10b981" },
                               ],
                             };
                           } else if (newColumnType === "PRIORITY") {
                             // Fixed priority options
                             settings = {
                               options: [
-                                { id: "prio-low", label: "Low" },
-                                { id: "prio-medium", label: "Medium" },
-                                { id: "prio-high", label: "High" },
-                                { id: "prio-urgent", label: "Urgent" },
+                                { id: "prio-low", label: "Low", color: "#8b5cf6" },
+                                { id: "prio-medium", label: "Medium", color: "#f59e0b" },
+                                { id: "prio-high", label: "High", color: "#ef4444" },
+                                { id: "prio-urgent", label: "Urgent", color: "#dc2626" },
                               ],
                             };
                           }
@@ -767,7 +767,7 @@ export default function BoardPage() {
                                 switch (col.type) {
                                   case "TEXT": return cellData.text || "-";
                                   case "NUMBER": return cellData.number !== undefined ? String(cellData.number) : "-";
-                                  case "DATE": return cellData.date || "-";
+                                  case "DATE": return cellData.date ? String(cellData.date) : "-";
                                   case "STATUS":
                                   case "PRIORITY": {
                                     const optId = cellData.optionId || cellData.statusId; // Backward compat
@@ -797,7 +797,7 @@ export default function BoardPage() {
                                   switch (col.type) {
                                     case "TEXT": cellValue = { text: value }; break;
                                     case "NUMBER": cellValue = { number: Number(value) }; break;
-                                    case "DATE": cellValue = { date: value }; break;
+                                    case "DATE": cellValue = { date: String(value) }; break;
                                     case "STATUS":
                                     case "PRIORITY": cellValue = { optionId: value }; break;
                                     case "PERSON": cellValue = { userId: value }; break;
@@ -824,7 +824,7 @@ export default function BoardPage() {
                                       if (col.type === "STATUS" || col.type === "PRIORITY") initValue = cellData.optionId || cellData.statusId || "";
                                       else if (col.type === "PERSON") initValue = cellData.userId || "";
                                       else if (col.type === "NUMBER") initValue = cellData.number !== undefined ? String(cellData.number) : "";
-                                      else if (col.type === "DATE") initValue = cellData.date || "";
+                                      else if (col.type === "DATE") initValue = cellData.date ? String(cellData.date) : "";
                                       else initValue = cellData.text || "";
                                     }
                                     setEditingCellValue(initValue);
@@ -960,8 +960,9 @@ export default function BoardPage() {
                                       if (!optId) return getDisplayValue();
                                       const options = col.settings?.options || [];
                                       const opt = options.find((o: any) => o.id === optId);
-                                      if (!opt?.color) return getDisplayValue();
-                                      return <span style={{ background: opt.color, color: "#fff", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 500, display: "inline-block", whiteSpace: "nowrap" }}>{opt.label}</span>;
+                                      if (!opt) return getDisplayValue();
+                                      const defaultColor = col.type === "STATUS" ? "#6b7280" : "#9ca3af";
+                                      return <span style={{ background: opt.color || defaultColor, color: "#fff", padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 500, display: "inline-block", whiteSpace: "nowrap" }}>{opt.label}</span>;
                                     })()
                                   ) : (
                                     getDisplayValue()

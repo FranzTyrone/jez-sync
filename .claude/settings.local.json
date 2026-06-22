@@ -16,7 +16,8 @@
       "Bash(npm install *)",
       "Bash(curl -s http://localhost:3000)",
       "Bash(curl -s http://localhost:3000/api/auth/signin)",
-      "Bash(tee /tmp/web-dev.log)"
+      "Bash(tee /tmp/web-dev.log)",
+      "Bash(curl -v http://127.0.0.1:3001/health)"
     ]
   }
 }
