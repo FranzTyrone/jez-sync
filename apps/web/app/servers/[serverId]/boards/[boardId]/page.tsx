@@ -193,7 +193,15 @@ export default function BoardPage() {
   const boardId = params.boardId as string;
 
   const [board, setBoard] = useState<Board | null>(null);
-  const [tableBoard, setTableBoard] = useState<TableBoard | null>(null);
+  const [tableBoard, setTableBoard] = useState<TableBoard>({
+    id: "",
+    name: "",
+    type: "TABLE",
+    groups: [],
+    items: [],
+    columns: [],
+    cells: {},
+  });
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
   const [newGroupName, setNewGroupName] = useState("");
@@ -214,13 +222,17 @@ export default function BoardPage() {
 
       if (data.type === "TABLE") {
         const tableRes = await fetch(`${getApiUrl()}/boards/${boardId}/table`);
-        const tableData: TableBoard = await tableRes.json();
-        setTableBoard(tableData);
+        if (tableRes.ok) {
+          const tableData: TableBoard = await tableRes.json();
+          setTableBoard(tableData);
 
-        // Fetch server members for PERSON column type
-        const membersRes = await fetch(`${getApiUrl()}/servers/${serverId}/members`);
-        const members = await membersRes.json();
-        setServerMembers(members);
+          // Fetch server members for PERSON column type
+          const membersRes = await fetch(`${getApiUrl()}/servers/${serverId}/members`);
+          if (membersRes.ok) {
+            const members = await membersRes.json();
+            setServerMembers(members);
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to load board:", err);
@@ -239,12 +251,12 @@ export default function BoardPage() {
     const activeId = active.id as string;
     const overId = over.id as string;
 
-    const sourceColumn = board.columns.find((c) =>
-      c.tasks.some((t) => t.id === activeId)
+    const sourceColumn = (board?.columns ?? []).find((c) =>
+      (c.tasks ?? []).some((t) => t.id === activeId)
     );
     const targetColumn =
-      board.columns.find((c) => c.id === overId) ||
-      board.columns.find((c) => c.tasks.some((t) => t.id === overId));
+      (board?.columns ?? []).find((c) => c.id === overId) ||
+      (board?.columns ?? []).find((c) => (c.tasks ?? []).some((t) => t.id === overId));
 
     if (!sourceColumn || !targetColumn || sourceColumn.id === targetColumn.id) return;
 
@@ -268,8 +280,8 @@ export default function BoardPage() {
 
     const taskId = active.id as string;
     const targetColumn =
-      board.columns.find((c) => c.id === over.id) ||
-      board.columns.find((c) => c.tasks.some((t) => t.id === over.id));
+      (board?.columns ?? []).find((c) => c.id === over.id) ||
+      (board?.columns ?? []).find((c) => (c.tasks ?? []).some((t) => t.id === over.id));
 
     if (!targetColumn) return;
 
@@ -484,7 +496,7 @@ export default function BoardPage() {
                     Groups
                   </h3>
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-                    {tableBoard.groups.map((g) => (
+                    {(tableBoard?.groups ?? []).map((g) => (
                       <div
                         key={g.id}
                         style={{
@@ -532,7 +544,7 @@ export default function BoardPage() {
                     Columns
                   </h3>
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-                    {tableBoard.columns.map((c) => (
+                    {(tableBoard?.columns ?? []).map((c) => (
                       <div
                         key={c.id}
                         style={{
@@ -665,7 +677,7 @@ export default function BoardPage() {
               {/* Items Table */}
               <div style={{ padding: "16px", overflowX: "auto" }}>
                 {/* Groups as table sections */}
-                {tableBoard.groups.map((group) => (
+                {(tableBoard?.groups ?? []).map((group) => (
                   <div key={group.id} style={{ marginBottom: "24px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
                       <h4 style={{ color: "#cbd5e1", margin: 0, fontSize: "13px", fontWeight: 600 }}>
@@ -723,7 +735,7 @@ export default function BoardPage() {
                       <thead>
                         <tr style={{ borderBottom: "1px solid #252f42" }}>
                           <th style={{ textAlign: "left", padding: "8px", color: "#9ca3af", fontWeight: 500 }}>Title</th>
-                          {tableBoard.columns.map((c) => (
+                          {(tableBoard?.columns ?? []).map((c) => (
                             <th key={c.id} style={{ textAlign: "left", padding: "8px", color: "#9ca3af", fontWeight: 500 }}>
                               {c.name}
                             </th>
@@ -731,7 +743,7 @@ export default function BoardPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {tableBoard.items.filter((i) => i.groupId === group.id).map((item) => (
+                        {(tableBoard?.items ?? []).filter((i) => i.groupId === group.id).map((item) => (
                           <tr key={item.id} style={{ borderBottom: "1px solid #252f42" }}>
                             <td style={{ padding: "8px", minWidth: "150px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
                               <span>{item.title}</span>
@@ -758,8 +770,8 @@ export default function BoardPage() {
                                 🗑
                               </button>
                             </td>
-                            {tableBoard.columns.map((col) => {
-                              const cellData = tableBoard.cells[item.id]?.[col.id];
+                            {(tableBoard?.columns ?? []).map((col) => {
+                              const cellData = tableBoard?.cells[item.id]?.[col.id];
                               const isEditing = editingCell?.itemId === item.id && editingCell?.columnId === col.id;
 
                               // Helper to get display value based on type
@@ -1000,7 +1012,7 @@ export default function BoardPage() {
             paddingBottom: "24px",
           }}
         >
-          {board.columns.map((column) => (
+          {(board?.columns ?? []).map((column) => (
             <div
               key={column.id}
               style={{
@@ -1044,16 +1056,16 @@ export default function BoardPage() {
                     lineHeight: "1.6",
                   }}
                 >
-                  {column.tasks.length}
+                  {(column.tasks ?? []).length}
                 </span>
               </div>
 
               <DroppableColumn id={column.id}>
                 <SortableContext
-                  items={column.tasks.map((t) => t.id)}
+                  items={(column.tasks ?? []).map((t) => t.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  {column.tasks.map((task) => (
+                  {(column.tasks ?? []).map((task) => (
                     <TaskCard key={task.id} task={task} />
                   ))}
                 </SortableContext>

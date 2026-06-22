@@ -18,7 +18,8 @@
       "Bash(curl -s http://localhost:3000/api/auth/signin)",
       "Bash(tee /tmp/web-dev.log)",
       "Bash(curl -v http://127.0.0.1:3001/health)",
-      "Bash(curl -s -m 5 http://localhost:3001/health)"
+      "Bash(curl -s -m 5 http://localhost:3001/health)",
+      "Bash(curl -s http://localhost:3000/servers)"
     ]
   }
 }
