@@ -47,7 +47,7 @@ export default function ChatTestPage() {
   }, []);
 
   useEffect(() => {
-    fetch(`${getApiUrl()}/channels/${CHANNEL_ID}/messages`)
+    fetch(`${getApiUrl()}/channels/${CHANNEL_ID}/messages`, { credentials: 'include' })
       .then((res) => res.json())
       .then((data: Message[]) => setMessages(data));
   }, []);

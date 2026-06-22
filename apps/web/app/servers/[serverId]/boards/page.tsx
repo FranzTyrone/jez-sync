@@ -34,7 +34,7 @@ export default function BoardsPage() {
   useEffect(() => {
     if (!serverId) return;
     fetch(`${getApiUrl()}/servers/${serverId}/boards`, {
-      credentials: "include",
+      credentials: 'include',
     })
       .then((res) => res.json())
       .then((data: { boards: BoardSummary[]; ownerId: string }) => {
@@ -50,7 +50,7 @@ export default function BoardsPage() {
     const res = await fetch(`${getApiUrl()}/servers/${serverId}/boards`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
+      credentials: 'include',
       body: JSON.stringify({ name: newName.trim(), type: boardType }),
     });
     const board = await res.json();
@@ -69,7 +69,7 @@ export default function BoardsPage() {
     const res = await fetch(`${getApiUrl()}/boards/${boardId}/visibility`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
+      credentials: 'include',
       body: JSON.stringify({ visibility: newVisibility }),
     });
     if (res.ok) {
@@ -89,7 +89,7 @@ export default function BoardsPage() {
     const res = await fetch(`${getApiUrl()}/boards/${boardId}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
+      credentials: 'include',
     });
     if (res.ok) {
       setBoards((prev) => prev.filter((b) => b.id !== boardId));

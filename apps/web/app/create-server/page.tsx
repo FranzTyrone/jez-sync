@@ -25,8 +25,8 @@ export default function CreateServerPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("${getApiUrl()}/servers", {
-        method: "POST",
+      const res = await fetch(`${getApiUrl()}/servers`, {
+        method: "POST", credentials: 'include',
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, ownerId: session.user.id }),
       });

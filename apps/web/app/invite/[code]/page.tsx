@@ -25,7 +25,7 @@ export default function InvitePage() {
   useEffect(() => {
     if (!code) return;
 
-    fetch(`${getApiUrl()}/invites/${code}`)
+    fetch(`${getApiUrl()}/invites/${code}`, { credentials: 'include' })
       .then((res) => {
         if (!res.ok) throw new Error("Invite not found");
         return res.json();
@@ -43,7 +43,7 @@ export default function InvitePage() {
     setJoining(true);
 
     const res = await fetch(`${getApiUrl()}/invites/${code}/join`, {
-      method: "POST",
+      method: "POST", credentials: 'include',
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: session.user.id }),
     });

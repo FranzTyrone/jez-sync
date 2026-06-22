@@ -66,7 +66,7 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (!session?.user?.id) return;
 
-    fetch(`${getApiUrl()}/users/${session.user.id}/servers`)
+    fetch(`${getApiUrl()}/users/${session.user.id}/servers`, { credentials: 'include' })
       .then((res) => res.json())
       .then((data: ServerWithChannels[]) => setServers(data));
   }, [session?.user?.id]);

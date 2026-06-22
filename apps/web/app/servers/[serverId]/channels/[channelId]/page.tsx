@@ -49,7 +49,7 @@ export default function ChannelPage() {
 
   useEffect(() => {
     if (!serverId || !session?.user?.id) return;
-    fetch(`${getApiUrl()}/users/${session.user.id}/servers`)
+    fetch(`${getApiUrl()}/users/${session.user.id}/servers`, { credentials: 'include' })
       .then((res) => res.json())
       .then((servers: any[]) => {
         const server = servers.find((s) => s.id === serverId);

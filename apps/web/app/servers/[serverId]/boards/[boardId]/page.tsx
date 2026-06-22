@@ -216,18 +216,18 @@ export default function BoardPage() {
 
   async function loadBoard() {
     try {
-      const res = await fetch(`${getApiUrl()}/boards/${boardId}`);
+      const res = await fetch(`${getApiUrl()}/boards/${boardId}`, { credentials: 'include' });
       const data: Board = await res.json();
       setBoard(data);
 
       if (data.type === "TABLE") {
-        const tableRes = await fetch(`${getApiUrl()}/boards/${boardId}/table`);
+        const tableRes = await fetch(`${getApiUrl()}/boards/${boardId}/table`, { credentials: 'include' });
         if (tableRes.ok) {
           const tableData: TableBoard = await tableRes.json();
           setTableBoard(tableData);
 
           // Fetch server members for PERSON column type
-          const membersRes = await fetch(`${getApiUrl()}/servers/${serverId}/members`);
+          const membersRes = await fetch(`${getApiUrl()}/servers/${serverId}/members`, { credentials: 'include' });
           if (membersRes.ok) {
             const members = await membersRes.json();
             setServerMembers(members);
@@ -285,9 +285,8 @@ export default function BoardPage() {
 
     if (!targetColumn) return;
 
-    await fetch(`${getApiUrl()}/tasks/${taskId}/move`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+    await fetch(`${getApiUrl()}/tasks/${taskId}/move`, { method: "PATCH",
+      headers: { "Content-Type": "application/json"  },
       body: JSON.stringify({
         userId: session.user.id,
         serverId,
@@ -302,9 +301,8 @@ export default function BoardPage() {
   async function createTask(columnId: string) {
     if (!newTaskTitle.trim() || !session?.user?.id || !board) return;
 
-    await fetch(`${getApiUrl()}/boards/${boardId}/tasks`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    await fetch(`${getApiUrl()}/boards/${boardId}/tasks`, { method: "POST",
+      headers: { "Content-Type": "application/json"  },
       body: JSON.stringify({
         userId: session.user.id,
         serverId,
@@ -516,10 +514,9 @@ export default function BoardPage() {
                       onChange={(e) => setNewGroupName(e.target.value)}
                       onKeyDown={async (e) => {
                         if (e.key === "Enter" && newGroupName.trim()) {
-                          await fetch(`${getApiUrl()}/boards/${boardId}/groups`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            credentials: "include",
+                          await fetch(`${getApiUrl()}/boards/${boardId}/groups`, { method: "POST",
+                            headers: { "Content-Type": "application/json"  },
+                            credentials: 'include',
                             body: JSON.stringify({ name: newGroupName.trim() }),
                           });
                           setNewGroupName("");
@@ -563,10 +560,9 @@ export default function BoardPage() {
                         <button
                           onClick={async () => {
                             if (!window.confirm(`Delete column "${c.name}"?`)) return;
-                            await fetch(`${getApiUrl()}/columns/${c.id}`, {
-                              method: "DELETE",
-                              credentials: "include",
-                            });
+                            await fetch(`${getApiUrl()}/columns/${c.id}`, { method: "DELETE",
+                              credentials: 'include',
+                             });
                             loadBoard();
                           }}
                           style={{
@@ -642,10 +638,9 @@ export default function BoardPage() {
                               ],
                             };
                           }
-                          await fetch(`${getApiUrl()}/boards/${boardId}/columns`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            credentials: "include",
+                          await fetch(`${getApiUrl()}/boards/${boardId}/columns`, { method: "POST",
+                            headers: { "Content-Type": "application/json"  },
+                            credentials: 'include',
                             body: JSON.stringify({
                               name: newColumnName.trim(),
                               type: newColumnType,
@@ -688,10 +683,9 @@ export default function BoardPage() {
                           onClick={async () => {
                             const title = prompt("Item title:");
                             if (!title) return;
-                            const res = await fetch(`${getApiUrl()}/boards/${boardId}/items`, {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              credentials: "include",
+                            const res = await fetch(`${getApiUrl()}/boards/${boardId}/items`, { method: "POST",
+                              headers: { "Content-Type": "application/json"  },
+                              credentials: 'include',
                               body: JSON.stringify({ title, groupId: group.id }),
                             });
                             if (res.ok) loadBoard();
@@ -711,10 +705,9 @@ export default function BoardPage() {
                         <button
                           onClick={async () => {
                             if (!window.confirm(`Delete group "${group.name}" and all its items?`)) return;
-                            await fetch(`${getApiUrl()}/groups/${group.id}`, {
-                              method: "DELETE",
-                              credentials: "include",
-                            });
+                            await fetch(`${getApiUrl()}/groups/${group.id}`, { method: "DELETE",
+                              credentials: 'include',
+                             });
                             loadBoard();
                           }}
                           style={{
@@ -750,10 +743,9 @@ export default function BoardPage() {
                               <button
                                 onClick={async () => {
                                   if (!window.confirm(`Delete "${item.title}"?`)) return;
-                                  await fetch(`${getApiUrl()}/items/${item.id}`, {
-                                    method: "DELETE",
-                                    credentials: "include",
-                                  });
+                                  await fetch(`${getApiUrl()}/items/${item.id}`, { method: "DELETE",
+                                    credentials: 'include',
+                                   });
                                   loadBoard();
                                 }}
                                 style={{
@@ -802,7 +794,7 @@ export default function BoardPage() {
                                   await fetch("${getApiUrl()}/cells", {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
-                                    credentials: "include",
+                                    credentials: 'include',
                                     body: JSON.stringify({ itemId: item.id, columnId: col.id, value: null }),
                                   });
                                 } else {
@@ -819,7 +811,7 @@ export default function BoardPage() {
                                   await fetch("${getApiUrl()}/cells", {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
-                                    credentials: "include",
+                                    credentials: 'include',
                                     body: JSON.stringify({ itemId: item.id, columnId: col.id, value: cellValue }),
                                   });
                                 }

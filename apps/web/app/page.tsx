@@ -23,7 +23,7 @@ export default function Home() {
       return;
     }
 
-    fetch(`${getApiUrl()}/users/${session.user.id}/servers`)
+    fetch(`${getApiUrl()}/users/${session.user.id}/servers`, { credentials: 'include' })
       .then((res) => res.json())
       .then((servers: Server[]) => {
         if (servers.length > 0 && servers[0].channels.length > 0) {
