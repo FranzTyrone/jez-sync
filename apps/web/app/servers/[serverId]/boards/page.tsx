@@ -1,5 +1,7 @@
 "use client";
 
+import { getApiUrl } from '@/lib/config';
+
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
@@ -9,6 +11,7 @@ type BoardSummary = {
   name: string;
   createdAt: string;
   createdById: string;
+  visibility: "PUBLIC" | "PRIVATE";
   _count: { tasks: number };
 };
 
@@ -30,11 +33,13 @@ export default function BoardsPage() {
 
   useEffect(() => {
     if (!serverId) return;
-    fetch(`http://localhost:3001/servers/${serverId}/boards`)
+    fetch(`${getApiUrl()}/servers/${serverId}/boards`, {
+      credentials: "include",
+    })
       .then((res) => res.json())
       .then((data: { boards: BoardSummary[]; ownerId: string }) => {
-        setBoards(data.boards);
-        setOwnerId(data.ownerId);
+        setBoards(data.boards ?? []);
+        setOwnerId(data.ownerId ?? "");
         setLoading(false);
       });
   }, [serverId]);
@@ -42,7 +47,7 @@ export default function BoardsPage() {
   async function createBoard() {
     if (!newName.trim()) return;
     setSubmitting(true);
-    const res = await fetch(`http://localhost:3001/servers/${serverId}/boards`, {
+    const res = await fetch(`${getApiUrl()}/servers/${serverId}/boards`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -58,12 +63,30 @@ export default function BoardsPage() {
     }
   }
 
+  async function toggleBoardVisibility(boardId: string, currentVisibility: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    const newVisibility = currentVisibility === "PUBLIC" ? "PRIVATE" : "PUBLIC";
+    const res = await fetch(`${getApiUrl()}/boards/${boardId}/visibility`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ visibility: newVisibility }),
+    });
+    if (res.ok) {
+      setBoards((prev) =>
+        prev.map((b) =>
+          b.id === boardId ? { ...b, visibility: newVisibility as "PUBLIC" | "PRIVATE" } : b
+        )
+      );
+    }
+  }
+
   async function deleteBoard(boardId: string, e: React.MouseEvent) {
     e.stopPropagation();
     if (!window.confirm("Are you sure you want to delete this board? This cannot be undone.")) {
       return;
     }
-    const res = await fetch(`http://localhost:3001/boards/${boardId}`, {
+    const res = await fetch(`${getApiUrl()}/boards/${boardId}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -311,7 +334,7 @@ export default function BoardsPage() {
           ))}
           <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
         </div>
-      ) : boards.length === 0 ? (
+      ) : !boards || boards.length === 0 ? (
         <div
           style={{
             display: "flex",
@@ -354,7 +377,7 @@ export default function BoardsPage() {
             gap: "16px",
           }}
         >
-          {boards.map((board) => {
+          {(boards ?? []).map((board) => {
             const canDelete = session?.user?.id === board.createdById || session?.user?.id === ownerId;
             return (
               <div
@@ -380,39 +403,76 @@ export default function BoardsPage() {
                   (e.currentTarget as HTMLDivElement).style.boxShadow = "none";
                 }}
               >
-                {canDelete && (
-                  <button
-                    onClick={(e) => deleteBoard(board.id, e)}
-                    title="Delete board"
-                    style={{
-                      position: "absolute",
-                      top: "12px",
-                      right: "12px",
-                      width: "24px",
-                      height: "24px",
-                      borderRadius: "6px",
-                      border: "none",
-                      background: "rgba(239,68,68,0.1)",
-                      color: "#ef4444",
-                      fontSize: "12px",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      transition: "background 0.15s ease, color 0.15s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "rgba(239,68,68,0.25)";
-                      e.currentTarget.style.color = "#fca5a5";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "rgba(239,68,68,0.1)";
-                      e.currentTarget.style.color = "#ef4444";
-                    }}
-                  >
-                    ✕
-                  </button>
-                )}
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "12px",
+                    right: "12px",
+                    display: "flex",
+                    gap: "6px",
+                  }}
+                >
+                  {canDelete && (
+                    <>
+                      <button
+                        onClick={(e) => toggleBoardVisibility(board.id, board.visibility, e)}
+                        title={board.visibility === "PUBLIC" ? "Make private" : "Make public"}
+                        style={{
+                          width: "24px",
+                          height: "24px",
+                          borderRadius: "6px",
+                          border: "none",
+                          background: "rgba(99,102,241,0.1)",
+                          color: "#6366f1",
+                          fontSize: "12px",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          transition: "background 0.15s ease, color 0.15s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(99,102,241,0.25)";
+                          e.currentTarget.style.color = "#818cf8";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "rgba(99,102,241,0.1)";
+                          e.currentTarget.style.color = "#6366f1";
+                        }}
+                      >
+                        {board.visibility === "PUBLIC" ? "🌐" : "🔒"}
+                      </button>
+                      <button
+                        onClick={(e) => deleteBoard(board.id, e)}
+                        title="Delete board"
+                        style={{
+                          width: "24px",
+                          height: "24px",
+                          borderRadius: "6px",
+                          border: "none",
+                          background: "rgba(239,68,68,0.1)",
+                          color: "#ef4444",
+                          fontSize: "12px",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          transition: "background 0.15s ease, color 0.15s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(239,68,68,0.25)";
+                          e.currentTarget.style.color = "#fca5a5";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "rgba(239,68,68,0.1)";
+                          e.currentTarget.style.color = "#ef4444";
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </>
+                  )}
+                </div>
 
                 <div
                   style={{

@@ -1,5 +1,7 @@
 "use client";
 
+import { getApiUrl } from '@/lib/config';
+
 import { useEffect, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
@@ -64,7 +66,7 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (!session?.user?.id) return;
 
-    fetch(`http://localhost:3001/users/${session.user.id}/servers`)
+    fetch(`${getApiUrl()}/users/${session.user.id}/servers`)
       .then((res) => res.json())
       .then((data: ServerWithChannels[]) => setServers(data));
   }, [session?.user?.id]);

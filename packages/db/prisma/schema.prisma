@@ -142,10 +142,16 @@ enum BoardType {
   TABLE
 }
 
+enum BoardVisibility {
+  PUBLIC
+  PRIVATE
+}
+
 model Board {
   id                    String        @id @default(uuid())
   name                  String
   type                  BoardType     @default(KANBAN)
+  visibility            BoardVisibility @default(PUBLIC)
   serverId              String
   createdById           String
   createdAt             DateTime      @default(now())

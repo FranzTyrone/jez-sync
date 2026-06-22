@@ -1,5 +1,7 @@
 "use client";
 
+import { getApiUrl } from '@/lib/config';
+
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -23,7 +25,7 @@ export default function CreateServerPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:3001/servers", {
+      const res = await fetch("${getApiUrl()}/servers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, ownerId: session.user.id }),

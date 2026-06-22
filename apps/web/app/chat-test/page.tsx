@@ -1,5 +1,7 @@
 "use client";
 
+import { getApiUrl } from '@/lib/config';
+
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { socket } from "@/lib/socket";
@@ -45,7 +47,7 @@ export default function ChatTestPage() {
   }, []);
 
   useEffect(() => {
-    fetch(`http://localhost:3001/channels/${CHANNEL_ID}/messages`)
+    fetch(`${getApiUrl()}/channels/${CHANNEL_ID}/messages`)
       .then((res) => res.json())
       .then((data: Message[]) => setMessages(data));
   }, []);

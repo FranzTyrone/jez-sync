@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
+import { getApiUrl } from "@/lib/config";
 import {
   DndContext,
   DragEndEvent,
@@ -207,17 +208,17 @@ export default function BoardPage() {
 
   async function loadBoard() {
     try {
-      const res = await fetch(`http://localhost:3001/boards/${boardId}`);
+      const res = await fetch(`${getApiUrl()}/boards/${boardId}`);
       const data: Board = await res.json();
       setBoard(data);
 
       if (data.type === "TABLE") {
-        const tableRes = await fetch(`http://localhost:3001/boards/${boardId}/table`);
+        const tableRes = await fetch(`${getApiUrl()}/boards/${boardId}/table`);
         const tableData: TableBoard = await tableRes.json();
         setTableBoard(tableData);
 
         // Fetch server members for PERSON column type
-        const membersRes = await fetch(`http://localhost:3001/servers/${serverId}/members`);
+        const membersRes = await fetch(`${getApiUrl()}/servers/${serverId}/members`);
         const members = await membersRes.json();
         setServerMembers(members);
       }
@@ -272,7 +273,7 @@ export default function BoardPage() {
 
     if (!targetColumn) return;
 
-    await fetch(`http://localhost:3001/tasks/${taskId}/move`, {
+    await fetch(`${getApiUrl()}/tasks/${taskId}/move`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -289,7 +290,7 @@ export default function BoardPage() {
   async function createTask(columnId: string) {
     if (!newTaskTitle.trim() || !session?.user?.id || !board) return;
 
-    await fetch(`http://localhost:3001/boards/${boardId}/tasks`, {
+    await fetch(`${getApiUrl()}/boards/${boardId}/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -503,7 +504,7 @@ export default function BoardPage() {
                       onChange={(e) => setNewGroupName(e.target.value)}
                       onKeyDown={async (e) => {
                         if (e.key === "Enter" && newGroupName.trim()) {
-                          await fetch(`http://localhost:3001/boards/${boardId}/groups`, {
+                          await fetch(`${getApiUrl()}/boards/${boardId}/groups`, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             credentials: "include",
@@ -550,7 +551,7 @@ export default function BoardPage() {
                         <button
                           onClick={async () => {
                             if (!window.confirm(`Delete column "${c.name}"?`)) return;
-                            await fetch(`http://localhost:3001/columns/${c.id}`, {
+                            await fetch(`${getApiUrl()}/columns/${c.id}`, {
                               method: "DELETE",
                               credentials: "include",
                             });
@@ -629,7 +630,7 @@ export default function BoardPage() {
                               ],
                             };
                           }
-                          await fetch(`http://localhost:3001/boards/${boardId}/columns`, {
+                          await fetch(`${getApiUrl()}/boards/${boardId}/columns`, {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             credentials: "include",
@@ -675,7 +676,7 @@ export default function BoardPage() {
                           onClick={async () => {
                             const title = prompt("Item title:");
                             if (!title) return;
-                            const res = await fetch(`http://localhost:3001/boards/${boardId}/items`, {
+                            const res = await fetch(`${getApiUrl()}/boards/${boardId}/items`, {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
                               credentials: "include",
@@ -698,7 +699,7 @@ export default function BoardPage() {
                         <button
                           onClick={async () => {
                             if (!window.confirm(`Delete group "${group.name}" and all its items?`)) return;
-                            await fetch(`http://localhost:3001/groups/${group.id}`, {
+                            await fetch(`${getApiUrl()}/groups/${group.id}`, {
                               method: "DELETE",
                               credentials: "include",
                             });
@@ -737,7 +738,7 @@ export default function BoardPage() {
                               <button
                                 onClick={async () => {
                                   if (!window.confirm(`Delete "${item.title}"?`)) return;
-                                  await fetch(`http://localhost:3001/items/${item.id}`, {
+                                  await fetch(`${getApiUrl()}/items/${item.id}`, {
                                     method: "DELETE",
                                     credentials: "include",
                                   });
@@ -786,7 +787,7 @@ export default function BoardPage() {
                               const saveCell = async (value: any) => {
                                 if (value === null || value === undefined || value === "") {
                                   // Clear the cell
-                                  await fetch("http://localhost:3001/cells", {
+                                  await fetch("${getApiUrl()}/cells", {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
                                     credentials: "include",
@@ -803,7 +804,7 @@ export default function BoardPage() {
                                     case "PERSON": cellValue = { userId: value }; break;
                                     default: cellValue = value;
                                   }
-                                  await fetch("http://localhost:3001/cells", {
+                                  await fetch("${getApiUrl()}/cells", {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
                                     credentials: "include",

@@ -4,9 +4,45 @@ import { checkPermission } from "../lib/permissions";
 import { authenticateRequest } from "../lib/auth";
 
 export async function boardRoutes(app: FastifyInstance) {
+  // Helper: check if user can ACCESS a board (read/write its data)
+  async function canAccessBoard(
+    userId: string,
+    boardId: string
+  ): Promise<{
+    allowed: boolean;
+    board?: { id: string; serverId: string; createdById: string; visibility: string };
+    server?: { id: string; ownerId: string };
+    isCreatorOrOwner?: boolean;
+  }> {
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { id: true, serverId: true, createdById: true, visibility: true },
+    });
+    if (!board) {
+      return { allowed: false };
+    }
+
+    const server = await prisma.server.findUnique({
+      where: { id: board.serverId },
+      select: { id: true, ownerId: true },
+    });
+    if (!server) {
+      return { allowed: false };
+    }
+
+    const isCreatorOrOwner = userId === board.createdById || userId === server.ownerId;
+    const allowed = board.visibility === "PUBLIC" || isCreatorOrOwner;
+
+    return { allowed, board, server, isCreatorOrOwner };
+  }
   // List all boards for a server (summary — no columns/tasks) with server owner
-  app.get("/servers/:serverId/boards", async (request, reply) => {
+  app.get("/servers/:serverId/boards", { preHandler: authenticateRequest }, async (request, reply) => {
     const { serverId } = request.params as { serverId: string };
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
 
     const server = await prisma.server.findUnique({
       where: { id: serverId },
@@ -17,12 +53,19 @@ export async function boardRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: "Server not found" });
     }
 
-    const boards = await prisma.board.findMany({
+    const allBoards = await prisma.board.findMany({
       where: { serverId },
       orderBy: { createdAt: "asc" },
       include: {
         _count: { select: { tasks: true } },
       },
+    });
+
+    // Filter: show board if PUBLIC or if PRIVATE and user is creator/owner
+    const boards = allBoards.filter((board: any) => {
+      if (board.visibility === "PUBLIC") return true;
+      // PRIVATE: only show if user is creator or server owner
+      return userId === board.createdById || userId === server.ownerId;
     });
 
     return { boards, ownerId: server.ownerId };
@@ -90,8 +133,19 @@ export async function boardRoutes(app: FastifyInstance) {
   });
 
   // Get full board detail with columns and tasks
-  app.get("/boards/:boardId", async (request, reply) => {
+  app.get("/boards/:boardId", { preHandler: authenticateRequest }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string };
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+
+    // Check visibility
+    const access = await canAccessBoard(userId, boardId);
+    if (!access.allowed) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
 
     const board = await prisma.board.findUnique({
       where: { id: boardId },
@@ -159,6 +213,54 @@ export async function boardRoutes(app: FastifyInstance) {
     return { success: true };
   });
 
+  // Toggle board visibility (only creator or server owner can toggle)
+  app.patch("/boards/:boardId/visibility", { preHandler: authenticateRequest }, async (request, reply) => {
+    const { boardId } = request.params as { boardId: string };
+    const { visibility } = request.body as { visibility: "PUBLIC" | "PRIVATE" };
+    const userId = request.user?.id;
+
+    if (!userId) {
+      return reply.status(401).send({ error: "Unauthorized" });
+    }
+
+    if (!visibility || !["PUBLIC", "PRIVATE"].includes(visibility)) {
+      return reply.status(400).send({ error: "Invalid visibility value" });
+    }
+
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { serverId: true, createdById: true },
+    });
+
+    if (!board) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
+
+    const server = await prisma.server.findUnique({
+      where: { id: board.serverId },
+      select: { ownerId: true },
+    });
+
+    if (!server) {
+      return reply.status(404).send({ error: "Server not found" });
+    }
+
+    // Strict check: only creator or server owner can change visibility
+    const isCreator = userId === board.createdById;
+    const isOwner = userId === server.ownerId;
+
+    if (!isCreator && !isOwner) {
+      return reply.status(403).send({ error: "Not authorized to change board visibility" });
+    }
+
+    const updated = await prisma.board.update({
+      where: { id: boardId },
+      data: { visibility },
+    });
+
+    return updated;
+  });
+
   // Create a new task on a board
   app.post("/boards/:boardId/tasks", async (request, reply) => {
     const { boardId } = request.params as { boardId: string };
@@ -173,6 +275,12 @@ export async function boardRoutes(app: FastifyInstance) {
         assigneeId?: string;
         dueDate?: string;
       };
+
+    // Check visibility first (404 if user can't access board)
+    const access = await canAccessBoard(userId, boardId);
+    if (!access.allowed) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
 
     const allowed = await checkPermission(userId, serverId, "canManageBoards");
     if (!allowed) {
@@ -210,16 +318,31 @@ export async function boardRoutes(app: FastifyInstance) {
       position: number;
     };
 
+    // Resolve boardId from taskId
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: { boardId: true },
+    });
+    if (!task) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
+
+    // Check visibility first (404 if user can't access board)
+    const access = await canAccessBoard(userId, task.boardId);
+    if (!access.allowed) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
+
     const allowed = await checkPermission(userId, serverId, "canManageBoards");
     if (!allowed) {
       return reply.status(403).send({ error: "No permission to manage boards" });
     }
 
-    const task = await prisma.task.update({
+    const updated = await prisma.task.update({
       where: { id: taskId },
       data: { columnId, position },
     });
 
-    return task;
+    return updated;
   });
 }

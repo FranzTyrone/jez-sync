@@ -1,5 +1,7 @@
 "use client";
 
+import { getApiUrl } from '@/lib/config';
+
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
@@ -23,7 +25,7 @@ export default function InvitePage() {
   useEffect(() => {
     if (!code) return;
 
-    fetch(`http://localhost:3001/invites/${code}`)
+    fetch(`${getApiUrl()}/invites/${code}`)
       .then((res) => {
         if (!res.ok) throw new Error("Invite not found");
         return res.json();
@@ -40,7 +42,7 @@ export default function InvitePage() {
 
     setJoining(true);
 
-    const res = await fetch(`http://localhost:3001/invites/${code}/join`, {
+    const res = await fetch(`${getApiUrl()}/invites/${code}/join`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: session.user.id }),

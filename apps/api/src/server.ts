@@ -23,6 +23,16 @@ import {
 const app = Fastify({ logger: true });
 const activeVoiceUsers = new Map<string, string>();
 
+// Get allowed origins from env or default to localhost
+function getAllowedOrigins(): string | RegExp | (string | RegExp)[] {
+  const corsOrigins = process.env.CORS_ORIGINS || "http://localhost:3000";
+  // If comma-separated, return as array
+  if (corsOrigins.includes(",")) {
+    return corsOrigins.split(",").map(o => o.trim());
+  }
+  return corsOrigins;
+}
+
 app.get("/health", async () => {
   return { status: "ok", service: "jez-sync-api" };
 });
@@ -39,8 +49,9 @@ const start = async () => {
     // Register cookie support first (needed for auth middleware)
     await app.register(import("@fastify/cookie"));
 
+    const allowedOrigins = getAllowedOrigins();
     await app.register(import("@fastify/cors"), {
-      origin: "http://localhost:3000",
+      origin: allowedOrigins,
       methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
       credentials: true,
     });
@@ -56,8 +67,9 @@ const start = async () => {
 
     const io = new Server(app.server, {
       cors: {
-        origin: "http://localhost:3000",
+        origin: allowedOrigins,
         methods: ["GET", "POST"],
+        credentials: true,
       },
     });
 

@@ -3,11 +3,45 @@ import { prisma } from "../lib/prisma";
 import { authenticateRequest } from "../lib/auth";
 
 export async function tableRoutes(app: FastifyInstance) {
+  // Helper: check if user can ACCESS a board (read/write its data)
+  // Returns true if board is PUBLIC or if PRIVATE and user is creator/owner
+  async function canAccessBoard(
+    userId: string,
+    boardId: string
+  ): Promise<{
+    allowed: boolean;
+    board?: { id: string; serverId: string; createdById: string; visibility: string };
+    server?: { id: string; ownerId: string };
+    isCreatorOrOwner?: boolean;
+  }> {
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { id: true, serverId: true, createdById: true, visibility: true },
+    });
+    if (!board) {
+      return { allowed: false };
+    }
+
+    const server = await prisma.server.findUnique({
+      where: { id: board.serverId },
+      select: { id: true, ownerId: true },
+    });
+    if (!server) {
+      return { allowed: false };
+    }
+
+    const isCreatorOrOwner = userId === board.createdById || userId === server.ownerId;
+    const allowed = board.visibility === "PUBLIC" || isCreatorOrOwner;
+
+    return { allowed, board, server, isCreatorOrOwner };
+  }
+
   // Helper: resolve and authorize (userId must be creator or server owner)
+  // Used for write operations that require full control, not just access
   async function authorize(userId: string, boardId: string, reply: any) {
     const board = await prisma.board.findUnique({
       where: { id: boardId },
-      select: { serverId: true, createdById: true },
+      select: { serverId: true, createdById: true, visibility: true },
     });
     if (!board) {
       return reply.status(404).send({ error: "Board not found" });
@@ -21,8 +55,14 @@ export async function tableRoutes(app: FastifyInstance) {
     }
     const isCreator = userId === board.createdById;
     const isOwner = userId === server.ownerId;
+
+    // Check visibility: if PRIVATE and user isn't creator/owner, reject with 404
+    if (board.visibility === "PRIVATE" && !isCreator && !isOwner) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
+
     if (!isCreator && !isOwner) {
-      return reply.status(403).send({ error: "Not authorized" });
+      return reply.status(404).send({ error: "Not authorized to modify this board" });
     }
     return { board, server, authorized: true };
   }
@@ -261,8 +301,15 @@ export async function tableRoutes(app: FastifyInstance) {
   });
 
   // GET /boards/:boardId/table - fetch full table (groups, items, columns, cells)
-  app.get("/boards/:boardId/table", async (request, reply) => {
+  app.get("/boards/:boardId/table", { preHandler: authenticateRequest }, async (request, reply) => {
     const { boardId } = request.params as { boardId: string };
+    const userId = request.user?.id;
+
+    if (!userId) return reply.status(401).send({ error: "Unauthorized" });
+
+    // Check visibility
+    const access = await canAccessBoard(userId, boardId);
+    if (!access.allowed) return reply.status(404).send({ error: "Board not found" });
 
     const board = await prisma.board.findUnique({
       where: { id: boardId },

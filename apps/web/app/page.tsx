@@ -1,5 +1,7 @@
 "use client";
 
+import { getApiUrl } from '@/lib/config';
+
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -21,7 +23,7 @@ export default function Home() {
       return;
     }
 
-    fetch(`http://localhost:3001/users/${session.user.id}/servers`)
+    fetch(`${getApiUrl()}/users/${session.user.id}/servers`)
       .then((res) => res.json())
       .then((servers: Server[]) => {
         if (servers.length > 0 && servers[0].channels.length > 0) {

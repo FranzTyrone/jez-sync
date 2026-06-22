@@ -1,5 +1,7 @@
 "use client";
 
+import { getApiUrl } from '@/lib/config';
+
 import { useEffect, useState, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useParams } from "next/navigation";
@@ -47,7 +49,7 @@ export default function ChannelPage() {
 
   useEffect(() => {
     if (!serverId || !session?.user?.id) return;
-    fetch(`http://localhost:3001/users/${session.user.id}/servers`)
+    fetch(`${getApiUrl()}/users/${session.user.id}/servers`)
       .then((res) => res.json())
       .then((servers: any[]) => {
         const server = servers.find((s) => s.id === serverId);
@@ -124,7 +126,7 @@ export default function ChannelPage() {
 
   useEffect(() => {
     if (!channelId || !session?.user?.id) return;
-    const url = new URL(`http://localhost:3001/channels/${channelId}/messages`);
+    const url = new URL(`${getApiUrl()}/channels/${channelId}/messages`);
     url.searchParams.set("userId", session.user.id);
     fetch(url.toString())
       .then(async (res) => {
@@ -175,7 +177,7 @@ export default function ChannelPage() {
   async function generateInvite() {
     if (!session?.user?.id) return;
     const res = await fetch(
-      `http://localhost:3001/servers/${serverId}/invites`,
+      `${getApiUrl()}/servers/${serverId}/invites`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
