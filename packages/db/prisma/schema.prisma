@@ -21,6 +21,7 @@ model User {
   assignedTasks       Task[]              @relation("assignedTasks")
   sessions            Session[]
   annotationSessions  AnnotationSession[]
+  reactions           Reaction[]
 }
 
 model Session {
@@ -107,16 +108,31 @@ model Channel {
 }
 
 model Message {
-  id        String   @id @default(uuid())
+  id        String     @id @default(uuid())
   content   String
   authorId  String
   channelId String
   taskId    String?
-  createdAt DateTime @default(now())
-  author    User     @relation(fields: [authorId], references: [id])
-  channel   Channel  @relation(fields: [channelId], references: [id])
-  task      Task?    @relation(fields: [taskId], references: [id])
+  createdAt DateTime   @default(now())
+  editedAt  DateTime?
+  deletedAt DateTime?
+  author    User       @relation(fields: [authorId], references: [id])
+  channel   Channel    @relation(fields: [channelId], references: [id])
+  task      Task?      @relation(fields: [taskId], references: [id])
+  reactions Reaction[]
   @@index([channelId, createdAt])
+}
+
+model Reaction {
+  id        String   @id @default(uuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
 }
 
 // ─── PROJECT BOARDS ─────────────────────────────────────
