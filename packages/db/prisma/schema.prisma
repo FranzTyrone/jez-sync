@@ -122,13 +122,14 @@ model Message {
 // ─── PROJECT BOARDS ─────────────────────────────────────
 
 model Board {
-  id        String   @id @default(uuid())
-  name      String
-  serverId  String
-  createdAt DateTime @default(now())
-  server    Server   @relation(fields: [serverId], references: [id])
-  columns   Column[]
-  tasks     Task[]
+  id          String   @id @default(uuid())
+  name        String
+  serverId    String
+  createdById String
+  createdAt   DateTime @default(now())
+  server      Server   @relation(fields: [serverId], references: [id])
+  columns     Column[]
+  tasks       Task[]
   @@index([serverId])
 }
 

@@ -3,12 +3,67 @@ import { prisma } from "../lib/prisma";
 import { checkPermission } from "../lib/permissions";
 
 export async function boardRoutes(app: FastifyInstance) {
-  // Get the full board with columns and tasks
-  app.get("/servers/:serverId/board", async (request, reply) => {
+  // List all boards for a server (summary — no columns/tasks) with server owner
+  app.get("/servers/:serverId/boards", async (request, reply) => {
     const { serverId } = request.params as { serverId: string };
 
-    const board = await prisma.board.findFirst({
+    const server = await prisma.server.findUnique({
+      where: { id: serverId },
+      select: { ownerId: true },
+    });
+
+    if (!server) {
+      return reply.status(404).send({ error: "Server not found" });
+    }
+
+    const boards = await prisma.board.findMany({
       where: { serverId },
+      orderBy: { createdAt: "asc" },
+      include: {
+        _count: { select: { tasks: true } },
+      },
+    });
+
+    return { boards, ownerId: server.ownerId };
+  });
+
+  // Create a new board with default columns
+  app.post("/servers/:serverId/boards", async (request, reply) => {
+    const { serverId } = request.params as { serverId: string };
+    const { userId, name } = request.body as { userId: string; name: string };
+
+    const allowed = await checkPermission(userId, serverId, "canManageBoards");
+    if (!allowed) {
+      return reply.status(403).send({ error: "No permission to manage boards" });
+    }
+
+    const board = await prisma.board.create({
+      data: {
+        name,
+        serverId,
+        createdById: userId,
+        columns: {
+          create: [
+            { name: "To Do",       position: 0 },
+            { name: "In Progress", position: 1 },
+            { name: "Done",        position: 2 },
+          ],
+        },
+      },
+      include: {
+        columns: { orderBy: { position: "asc" } },
+      },
+    });
+
+    return reply.status(201).send(board);
+  });
+
+  // Get full board detail with columns and tasks
+  app.get("/boards/:boardId", async (request, reply) => {
+    const { boardId } = request.params as { boardId: string };
+
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
       include: {
         columns: {
           orderBy: { position: "asc" },
@@ -31,7 +86,45 @@ export async function boardRoutes(app: FastifyInstance) {
     return board;
   });
 
-  // Create a new task
+  // Delete a board (only creator or server owner can delete)
+  app.delete("/boards/:boardId", async (request, reply) => {
+    const { boardId } = request.params as { boardId: string };
+    const { userId } = request.body as { userId: string };
+
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { serverId: true, createdById: true },
+    });
+
+    if (!board) {
+      return reply.status(404).send({ error: "Board not found" });
+    }
+
+    const server = await prisma.server.findUnique({
+      where: { id: board.serverId },
+      select: { ownerId: true },
+    });
+
+    if (!server) {
+      return reply.status(404).send({ error: "Server not found" });
+    }
+
+    const isCreator = userId === board.createdById;
+    const isOwner = userId === server.ownerId;
+
+    if (!isCreator && !isOwner) {
+      return reply.status(403).send({ error: "Not authorized to delete this board" });
+    }
+
+    // Delete in order: tasks → columns → board
+    await prisma.task.deleteMany({ where: { boardId } });
+    await prisma.column.deleteMany({ where: { boardId } });
+    await prisma.board.delete({ where: { id: boardId } });
+
+    return { success: true };
+  });
+
+  // Create a new task on a board
   app.post("/boards/:boardId/tasks", async (request, reply) => {
     const { boardId } = request.params as { boardId: string };
     const { userId, serverId, title, description, priority, columnId, assigneeId, dueDate } =

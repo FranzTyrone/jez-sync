@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket";
+import { useVoice } from "@/lib/VoiceContext";
 
 type Channel = {
   id: string;
@@ -29,12 +30,27 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
   const params = useParams();
   const router = useRouter();
   const serverId = params.serverId as string;
-  const socket = getSocket();
 
   const [servers, setServers] = useState<ServerWithChannels[]>([]);
   const [voiceParticipants, setVoiceParticipants] = useState<Record<string, VoiceParticipant[]>>({});
   const [isMobile, setIsMobile] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const socketRef = useRef(getSocket());
+  const [socketVersion, setSocketVersion] = useState(0);
+  const { voiceState, actionsRef, voicePrefs, setVoicePrefs } = useVoice();
+
+  // Detect when resetSocket() replaces the singleton so we can re-register listeners.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const fresh = getSocket();
+      if (fresh !== socketRef.current) {
+        socketRef.current = fresh;
+        setSocketVersion((v) => v + 1);
+      }
+    }, 500);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     function checkSize() {
@@ -56,7 +72,7 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
   const currentServer = servers.find((s) => s.id === serverId);
 
   function refreshVoiceParticipants(channelId: string) {
-    socket.emit(
+    socketRef.current.emit(
       "voice:getChannelParticipants",
       { channelId },
       (response: { participants: VoiceParticipant[] }) => {
@@ -71,6 +87,8 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (!currentServer) return;
 
+    const socket = getSocket();
+    socketRef.current = socket;
     socket.connect();
 
     const voiceChannels = currentServer.channels.filter((c) => c.type === "VOICE");
@@ -115,7 +133,7 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
       socket.off("voice:participantMuteChanged", handleMuteChanged);
       socket.off("voice:participantDeafenChanged", handleDeafenChanged);
     };
-  }, [currentServer?.id]);
+  }, [currentServer?.id, socketVersion]);
 
   const initials = (session?.user?.name || "?")
     .split(" ")
@@ -139,6 +157,11 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
   }
 
   const showSidebar = !isMobile || drawerOpen;
+
+  const voiceChannelId = voiceState?.channelId ?? voicePrefs.lastChannelId;
+  const voiceChannelName = voiceChannelId
+    ? currentServer?.channels.find((c) => c.id === voiceChannelId)?.name ?? "Voice"
+    : null;
 
   return (
     <div style={{ display: "flex", fontFamily: "'Segoe UI', sans-serif", height: "100vh", overflow: "hidden", position: "relative" }}>
@@ -296,7 +319,7 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
 
         <div style={{ flex: 1, padding: "12px 8px", overflowY: "auto" }}>
           <div
-            onClick={() => navigateAndClose(`/servers/${serverId}/board`)}
+            onClick={() => navigateAndClose(`/servers/${serverId}/boards`)}
             style={{
               display: "flex",
               alignItems: "center",
@@ -312,7 +335,7 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
           >
             <span style={{ color: "#64748b", fontSize: "15px" }}>⊞</span>
-            Board
+            Boards
           </div>
 
           <p
@@ -397,6 +420,166 @@ export default function ServerLayout({ children }: { children: React.ReactNode }
             );
           })}
         </div>
+
+        {(() => {
+          const isConnected = voiceState !== null;
+          const { isMuted, isDeafened } = voicePrefs;
+          const isSharing = voiceState?.isSharing ?? false;
+
+          return (
+            <div
+              style={{
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+                background: "#0d1a2e",
+                padding: "8px 10px",
+                flexShrink: 0,
+              }}
+            >
+              {/* Status line */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  marginBottom: "8px",
+                }}
+              >
+                <span style={{ color: isConnected ? "#10b981" : "#4b5a72", fontSize: "10px" }}>●</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      color: isConnected ? "#10b981" : "#4b5a72",
+                    }}
+                  >
+                    {isConnected ? "Voice Connected" : "Not connected"}
+                  </p>
+                  {voiceChannelName && (
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: "11px",
+                        color: "#64748b",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {voiceChannelName}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: "flex", gap: "4px" }}>
+                {/* Mute — always shown, toggles pref when disconnected */}
+                <button
+                  title={isMuted ? "Unmute" : "Mute"}
+                  onClick={() => {
+                    if (isConnected) {
+                      actionsRef.current?.toggleMute();
+                     
+
+                    } else {
+                      setVoicePrefs((p) => ({ ...p, isMuted: !p.isMuted }));
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    height: "32px",
+                    borderRadius: "6px",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    background: isMuted ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.06)",
+                    color: "#e2e8f0",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isMuted ? "🔇" : "🎤"}
+                </button>
+
+                {/* Deafen — always shown, toggles pref when disconnected */}
+                <button
+                  title={isDeafened ? "Undeafen" : "Deafen"}
+                  onClick={() => {
+                    if (isConnected) {
+                      actionsRef.current?.toggleDeafen();
+                    } else {
+                      setVoicePrefs((p) => ({ ...p, isDeafened: !p.isDeafened }));
+                    }
+                  }}
+                  style={{
+                    flex: 1,
+                    height: "32px",
+                    borderRadius: "6px",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    background: isDeafened ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.06)",
+                    color: "#e2e8f0",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {isDeafened ? "🔕" : "🔊"}
+                </button>
+
+                {/* Screen share — in-call only */}
+                {isConnected && (
+                  <button
+                    title={isSharing ? "Stop sharing" : "Share screen"}
+                    onClick={() => actionsRef.current?.toggleShare()}
+                    style={{
+                      flex: 1,
+                      height: "32px",
+                      borderRadius: "6px",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      background: isSharing ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.06)",
+                      color: "#e2e8f0",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    🖥
+                  </button>
+                )}
+
+                {/* Leave — in-call only */}
+                {isConnected && (
+                  <button
+                    title="Leave call"
+                    onClick={() => actionsRef.current?.leaveVoice()}
+                    style={{
+                      flex: 1,
+                      height: "32px",
+                      borderRadius: "6px",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      background: "rgba(239,68,68,0.15)",
+                      color: "#ef4444",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    📞
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         <div
           style={{

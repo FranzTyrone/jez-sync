@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   DndContext,
   DragEndEvent,
@@ -40,12 +40,6 @@ type Board = {
   columns: Column[];
 };
 
-const PRIORITY_COLORS: Record<string, string> = {
-  LOW: "#999",
-  MEDIUM: "#f0ad4e",
-  HIGH: "#d9534f",
-};
-
 const PRIORITY_STYLES: Record<string, { bg: string; color: string; border: string }> = {
   LOW: {
     bg: "rgba(99,102,241,0.1)",
@@ -68,11 +62,7 @@ function TaskCard({ task }: { task: Task }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: task.id });
 
-  const pill = PRIORITY_STYLES[task.priority] ?? {
-    bg: "rgba(99,102,241,0.1)",
-    color: "#818cf8",
-    border: "rgba(99,102,241,0.2)",
-  };
+  const pill = PRIORITY_STYLES[task.priority] ?? PRIORITY_STYLES.MEDIUM;
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -155,7 +145,14 @@ function TaskCard({ task }: { task: Task }) {
             >
               {task.assignee.name[0].toUpperCase()}
             </span>
-            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "80px" }}>
+            <span
+              style={{
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                maxWidth: "80px",
+              }}
+            >
               {task.assignee.name}
             </span>
           </div>
@@ -174,13 +171,14 @@ function DroppableColumn({ id, children }: { id: string; children: React.ReactNo
   );
 }
 
-const FONT =
-  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
 export default function BoardPage() {
   const { data: session } = useSession();
   const params = useParams();
+  const router = useRouter();
   const serverId = params.serverId as string;
+  const boardId = params.boardId as string;
 
   const [board, setBoard] = useState<Board | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -188,12 +186,16 @@ export default function BoardPage() {
 
   const sensors = useSensors(useSensor(PointerSensor));
 
-  useEffect(() => {
-    if (!serverId) return;
-    fetch(`http://localhost:3001/servers/${serverId}/board`)
+  function loadBoard() {
+    fetch(`http://localhost:3001/boards/${boardId}`)
       .then((res) => res.json())
       .then((data: Board) => setBoard(data));
-  }, [serverId]);
+  }
+
+  useEffect(() => {
+    if (!boardId) return;
+    loadBoard();
+  }, [boardId]);
 
   function handleDragOver(event: DragOverEvent) {
     const { active, over } = event;
@@ -214,16 +216,11 @@ export default function BoardPage() {
     setBoard((prev) => {
       if (!prev) return prev;
       const task = sourceColumn.tasks.find((t) => t.id === activeId)!;
-
       return {
         ...prev,
         columns: prev.columns.map((c) => {
-          if (c.id === sourceColumn.id) {
-            return { ...c, tasks: c.tasks.filter((t) => t.id !== activeId) };
-          }
-          if (c.id === targetColumn.id) {
-            return { ...c, tasks: [...c.tasks, task] };
-          }
+          if (c.id === sourceColumn.id) return { ...c, tasks: c.tasks.filter((t) => t.id !== activeId) };
+          if (c.id === targetColumn.id) return { ...c, tasks: [...c.tasks, task] };
           return c;
         }),
       };
@@ -252,15 +249,13 @@ export default function BoardPage() {
       }),
     });
 
-    fetch(`http://localhost:3001/servers/${serverId}/board`)
-      .then((res) => res.json())
-      .then((data: Board) => setBoard(data));
+    loadBoard();
   }
 
   async function createTask(columnId: string) {
     if (!newTaskTitle.trim() || !session?.user?.id || !board) return;
 
-    await fetch(`http://localhost:3001/boards/${board.id}/tasks`, {
+    await fetch(`http://localhost:3001/boards/${boardId}/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -274,10 +269,7 @@ export default function BoardPage() {
 
     setNewTaskTitle("");
     setActiveColumnId(null);
-
-    fetch(`http://localhost:3001/servers/${serverId}/board`)
-      .then((res) => res.json())
-      .then((data: Board) => setBoard(data));
+    loadBoard();
   }
 
   if (!session) {
@@ -304,10 +296,7 @@ export default function BoardPage() {
         >
           <p style={{ color: "#9ca3af", fontSize: "15px", margin: 0 }}>
             You must be logged in.{" "}
-            <a
-              href="/login"
-              style={{ color: "#6366f1", textDecoration: "none", fontWeight: 500 }}
-            >
+            <a href="/login" style={{ color: "#6366f1", textDecoration: "none", fontWeight: 500 }}>
               Log in
             </a>
           </p>
@@ -326,7 +315,6 @@ export default function BoardPage() {
           padding: "28px 24px 40px",
         }}
       >
-        {/* Header skeleton */}
         <div style={{ marginBottom: "28px" }}>
           <div
             style={{
@@ -348,8 +336,6 @@ export default function BoardPage() {
             }}
           />
         </div>
-
-        {/* Column skeletons */}
         <div style={{ display: "flex", gap: "16px" }}>
           {[0, 1, 2].map((i) => (
             <div
@@ -389,7 +375,6 @@ export default function BoardPage() {
             </div>
           ))}
         </div>
-
         <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
       </main>
     );
@@ -406,6 +391,27 @@ export default function BoardPage() {
     >
       {/* Board header */}
       <div style={{ marginBottom: "28px" }}>
+        <button
+          onClick={() => router.push(`/servers/${serverId}/boards`)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#4b5a72",
+            fontSize: "12px",
+            cursor: "pointer",
+            padding: 0,
+            marginBottom: "10px",
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+            fontFamily: FONT,
+            transition: "color 0.15s ease",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#6366f1")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "#4b5a72")}
+        >
+          ← Boards
+        </button>
         <p
           style={{
             color: "#6366f1",
@@ -437,7 +443,6 @@ export default function BoardPage() {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        {/* Horizontal-scrolling column container */}
         <div
           style={{
             display: "flex",
@@ -459,7 +464,6 @@ export default function BoardPage() {
                 padding: "16px",
               }}
             >
-              {/* Column header */}
               <div
                 style={{
                   display: "flex",
@@ -496,7 +500,6 @@ export default function BoardPage() {
                 </span>
               </div>
 
-              {/* Task list */}
               <DroppableColumn id={column.id}>
                 <SortableContext
                   items={column.tasks.map((t) => t.id)}
@@ -508,7 +511,6 @@ export default function BoardPage() {
                 </SortableContext>
               </DroppableColumn>
 
-              {/* Add task */}
               {activeColumnId === column.id ? (
                 <div style={{ marginTop: "8px" }}>
                   <input
@@ -530,12 +532,8 @@ export default function BoardPage() {
                       marginBottom: "8px",
                       transition: "border-color 0.15s ease",
                     }}
-                    onFocus={(e) =>
-                      (e.currentTarget.style.borderColor = "#6366f1")
-                    }
-                    onBlur={(e) =>
-                      (e.currentTarget.style.borderColor = "#252f42")
-                    }
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#6366f1")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "#252f42")}
                   />
                   <div style={{ display: "flex", gap: "6px" }}>
                     <button
@@ -552,20 +550,13 @@ export default function BoardPage() {
                         cursor: "pointer",
                         transition: "background 0.15s ease",
                       }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.background = "#7c7ff2")
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.background = "#6366f1")
-                      }
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#7c7ff2")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "#6366f1")}
                     >
                       Add task
                     </button>
                     <button
-                      onClick={() => {
-                        setActiveColumnId(null);
-                        setNewTaskTitle("");
-                      }}
+                      onClick={() => { setActiveColumnId(null); setNewTaskTitle(""); }}
                       style={{
                         padding: "8px 12px",
                         fontSize: "13px",
@@ -574,7 +565,6 @@ export default function BoardPage() {
                         border: "1px solid #252f42",
                         borderRadius: "8px",
                         cursor: "pointer",
-                        lineHeight: 1,
                         transition: "border-color 0.15s ease, color 0.15s ease",
                       }}
                       onMouseEnter={(e) => {
