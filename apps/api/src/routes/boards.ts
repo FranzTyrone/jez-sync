@@ -29,7 +29,7 @@ export async function boardRoutes(app: FastifyInstance) {
       select: { id: true, ownerId: true },
     });
     if (!server) {
-      return { allowed: false, canSeeBook: false, isLocked: false };
+      return { allowed: false, canSeeBoard: false, isLocked: false };
     }
 
     const isCreatorOrOwner = userId === board.createdById || userId === server.ownerId;
@@ -84,17 +84,24 @@ export async function boardRoutes(app: FastifyInstance) {
     });
 
     // Return ALL boards with access status flags (no filtering)
-    const boards = allBoards.map((board: any) => {
+    const boards = await Promise.all(allBoards.map(async (board: any) => {
       const isCreatorOrOwner = userId === board.createdById || userId === server.ownerId;
       const hasPendingRequest = board.accessRequests.some((r: any) => r.status === "PENDING");
 
+      // Check if user is in BoardAccess for PRIVATE boards
+      const inAccessList = board.visibility === "PRIVATE"
+        ? await prisma.boardAccess.findUnique({
+            where: { boardId_userId: { boardId: board.id, userId } }
+          })
+        : null;
+
       return {
         ...board,
-        canAccess: board.visibility === "PUBLIC" || isCreatorOrOwner,  // Can open
-        isLocked: board.visibility === "PRIVATE" && !isCreatorOrOwner,
+        canAccess: board.visibility === "PUBLIC" || isCreatorOrOwner || !!inAccessList,
+        isLocked: board.visibility === "PRIVATE" && !isCreatorOrOwner && !inAccessList,
         hasPendingRequest,
       };
-    });
+    }));
 
     return { boards, ownerId: server.ownerId };
   });

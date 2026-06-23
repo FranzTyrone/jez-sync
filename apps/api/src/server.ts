@@ -58,6 +58,7 @@ const start = async () => {
 
     await app.listen({ port: 3001, host: "0.0.0.0" });
     console.log("API running on http://localhost:3001");
+    console.log(`[ENV] GEMINI_API_KEY loaded: ${!!process.env.GEMINI_API_KEY}`);
 
     try {
       await createWorker();

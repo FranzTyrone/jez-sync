@@ -425,4 +425,269 @@ export async function tableRoutes(app: FastifyInstance) {
       cells: cellsByItem,
     };
   });
+
+  // Helper: Generate stable, deduped option IDs for STATUS/PRIORITY
+  function generateStatusOptions(labels: string[]) {
+    const options = labels.map((label, idx) => ({
+      id: `opt_${label.toLowerCase().replace(/\s+/g, "_")}_${idx}`,
+      label,
+    }));
+    const labelToId = Object.fromEntries(options.map(o => [o.label, o.id]));
+    return { settings: { options }, labelToId };
+  }
+
+  // Helper: Extract JSON from first { to last }, parse defensively
+  function extractAndParseJson(rawResponse: string) {
+    const startIdx = rawResponse.indexOf('{');
+    const endIdx = rawResponse.lastIndexOf('}');
+    if (startIdx === -1 || endIdx === -1 || startIdx > endIdx) {
+      throw new Error("No JSON object found in response");
+    }
+    return JSON.parse(rawResponse.substring(startIdx, endIdx + 1));
+  }
+
+  // POST /boards/:boardId/ai-generate - Generate board with AI
+  app.post("/boards/:boardId/ai-generate", { preHandler: authenticateRequest }, async (request, reply) => {
+    const { boardId } = request.params as { boardId: string };
+    const userId = request.user?.id;
+
+    if (!userId) return reply.status(401).send({ error: "Unauthorized" });
+
+    const auth = await authorizeForWrite(userId, boardId, reply);
+    if (!auth) return;
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return reply.status(500).send({ error: "GEMINI_API_KEY not configured" });
+
+    const { description } = request.body as { description: string };
+    if (!description?.trim()) return reply.status(400).send({ error: "Description required" });
+
+    try {
+      const { GoogleGenerativeAI } = require("@google/generative-ai");
+      const client = new GoogleGenerativeAI(apiKey);
+      const model = client.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        systemInstruction: `You are a project management expert. Generate a realistic table board structure.
+Return ONLY valid JSON with no preamble or markdown code fences.
+
+Schema:
+{
+  "groups": [{"name": "string"}],
+  "columns": [{"name": "string", "type": "TEXT|NUMBER|DATE|STATUS|PRIORITY", "values": ["..."]}],
+  "items": [{"groupName": "string", "title": "string", "cells": {"columnName": value}}]
+}
+
+Rules:
+- Column types: TEXT, NUMBER, DATE, STATUS, PRIORITY only (no PERSON)
+- For STATUS/PRIORITY columns, include a "values" array with the option labels (e.g. ["To Do", "In Progress", "Done"])
+- Item groupName must match an existing group
+- Item cells must only reference existing columns
+- Keep it realistic: max 4 groups, 6 columns, 15 items`,
+      });
+
+      const userPrompt = `Project: ${description}
+
+Generate a table board structure for this project.`;
+
+      const result = await model.generateContent(userPrompt);
+      const responseText = result.response.text();
+
+      let parsed;
+      try {
+        parsed = extractAndParseJson(responseText);
+      } catch (parseError) {
+        console.error("[AI] JSON parse failed. Raw Gemini response:", responseText);
+        throw parseError;
+      }
+
+      // Validate structure
+      if (!parsed.groups || !Array.isArray(parsed.groups)) parsed.groups = [];
+      if (!parsed.columns || !Array.isArray(parsed.columns)) parsed.columns = [];
+      if (!parsed.items || !Array.isArray(parsed.items)) parsed.items = [];
+
+      const ALLOWED_TYPES = ["TEXT", "NUMBER", "DATE", "STATUS", "PRIORITY"];
+      const warnings: string[] = [];
+
+      // Validate and normalize columns
+      const validColumns = parsed.columns.filter((col: any) => {
+        if (!ALLOWED_TYPES.includes(col.type)) {
+          warnings.push(`Skipped column "${col.name}": type "${col.type}" not allowed`);
+          return false;
+        }
+        return true;
+      });
+
+      // Fetch existing column names on this board to avoid unique constraint violations
+      const existingColumns = await prisma.columnDefinition.findMany({
+        where: { boardId },
+        select: { name: true },
+      });
+      const existingColumnNames = new Set(existingColumns.map((c) => c.name));
+
+      // Dedupe column names against existing + within batch (handle boardId+name unique constraint)
+      const usedNames = new Set(existingColumnNames); // Start with existing names
+      const dedupeColumns = validColumns.map((col: any) => {
+        let name = col.name;
+        let counter = 2;
+
+        // Keep renaming until we find a unique name
+        while (usedNames.has(name)) {
+          name = `${col.name} (${counter})`;
+          counter++;
+        }
+
+        usedNames.add(name); // Mark this name as used
+        return { ...col, name };
+      });
+
+      // Validate groups
+      const groupNames = new Set(parsed.groups.map((g: any) => g.name));
+
+      // Create a map from original column names to final (deduplicated) names
+      const originalToFinalName: Record<string, string> = {};
+      validColumns.forEach((col: any, idx: number) => {
+        originalToFinalName[col.name] = dedupeColumns[idx].name;
+      });
+
+      // Validate items (skip invalid) and remap cell keys to final column names
+      const columnNames = new Set(dedupeColumns.map((c: any) => c.name));
+      const validItems = parsed.items.filter((item: any) => {
+        if (!groupNames.has(item.groupName)) {
+          warnings.push(`Skipped item "${item.title}": group "${item.groupName}" not found`);
+          return false;
+        }
+        // Remap cells to use final (deduplicated) column names
+        if (item.cells) {
+          item.cells = Object.fromEntries(
+            Object.entries(item.cells)
+              .map(([origColName, value]) => [originalToFinalName[origColName], value])
+              .filter(([finalColName]) => finalColName && columnNames.has(finalColName))
+          );
+        }
+        return true;
+      });
+
+      // Create in transaction
+      const transactionResult = await prisma.$transaction(async (tx) => {
+        // Create groups
+        const createdGroups = await Promise.all(
+          parsed.groups.map((g: any, idx: number) =>
+            tx.group.create({
+              data: { boardId, name: g.name, position: idx },
+            })
+          )
+        );
+        const groupIdMap = Object.fromEntries(createdGroups.map((g, idx) => [parsed.groups[idx].name, g.id]));
+
+        // Create columns + keep labelToId map for cell value mapping
+        const labelToIdMap: Record<string, Record<string, string>> = {};
+        const createdColumns = await Promise.all(
+          dedupeColumns.map((col: any, idx: number) => {
+            let data: any = {
+              boardId,
+              name: col.name,
+              type: col.type,
+              position: idx,
+              settings: {},
+            };
+
+            // Handle STATUS/PRIORITY with options
+            if ((col.type === "STATUS" || col.type === "PRIORITY") && col.values) {
+              const { settings, labelToId } = generateStatusOptions(col.values);
+              data.settings = settings;
+              labelToIdMap[col.name] = labelToId; // Store separately for cell mapping
+            }
+
+            return tx.columnDefinition.create({ data });
+          })
+        );
+        const columnIdMap = Object.fromEntries(createdColumns.map((c, idx) => [dedupeColumns[idx].name, c.id]));
+
+        // Create items
+        const createdItems = await Promise.all(
+          validItems.map((item: any, idx: number) =>
+            tx.tableItem.create({
+              data: {
+                boardId,
+                title: item.title,
+                groupId: groupIdMap[item.groupName],
+                position: idx,
+              },
+            })
+          )
+        );
+
+        // Create cells
+        for (let i = 0; i < validItems.length; i++) {
+          const item = validItems[i];
+          const createdItem = createdItems[i];
+
+          if (item.cells) {
+            for (const [colName, value] of Object.entries(item.cells)) {
+              const col = dedupeColumns.find((c: any) => c.name === colName);
+              if (!col) continue;
+
+              const createdCol = createdColumns.find((c, idx) => dedupeColumns[idx].name === colName);
+              if (!createdCol) continue;
+
+              // Map status/priority values to option IDs using the pre-computed map
+              let cellValue = value;
+              if ((col.type === "STATUS" || col.type === "PRIORITY") && labelToIdMap[colName]) {
+                const optionId = labelToIdMap[colName][value as string];
+                if (optionId) {
+                  cellValue = { optionId };
+                }
+              }
+
+              await tx.cellValue.create({
+                data: {
+                  itemId: createdItem.id,
+                  columnId: createdCol.id,
+                  boardId,
+                  value: cellValue,
+                },
+              });
+            }
+          }
+        }
+
+        return { groups: createdGroups, columns: createdColumns, items: createdItems };
+      });
+
+      return {
+        success: true,
+        generated: {
+          groups: transactionResult.groups.length,
+          columns: transactionResult.columns.length,
+          items: transactionResult.items.length,
+        },
+        warnings: warnings.length > 0 ? warnings : undefined,
+      };
+    } catch (error: any) {
+      console.error("AI generation error:", error);
+
+      // Extract the real error message from Gemini errors
+      let errorMessage = error.message || "Unknown error";
+      let statusCode = 500;
+
+      if (error.status === 429) {
+        errorMessage = "Quota exceeded: Too many requests. Please wait a moment and try again.";
+        statusCode = 429;
+      } else if (error.status === 401) {
+        errorMessage = "Invalid API key or authentication failed.";
+        statusCode = 401;
+      } else if (error.status === 404) {
+        errorMessage = "Model not found. The specified Gemini model is not available.";
+        statusCode = 404;
+      } else if (error.status === 400) {
+        errorMessage = "Invalid request: " + errorMessage;
+        statusCode = 400;
+      }
+
+      return reply.status(statusCode).send({
+        error: errorMessage,
+        status: error.status,
+      });
+    }
+  });
 }
