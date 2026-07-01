@@ -54,9 +54,9 @@ type TableBoard = {
 
 const PRIORITY_STYLES: Record<string, { bg: string; color: string; border: string }> = {
   LOW: {
-    bg: "rgba(99,102,241,0.1)",
-    color: "#818cf8",
-    border: "rgba(99,102,241,0.2)",
+    bg: "rgba(66,219,188,0.1)",
+    color: "#42DBBC",
+    border: "rgba(66,219,188,0.25)",
   },
   MEDIUM: {
     bg: "rgba(245,158,11,0.1)",
@@ -79,14 +79,14 @@ function TaskCard({ task }: { task: Task }) {
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    background: "#0d1117",
-    border: isDragging ? "1px solid #6366f1" : "1px solid #252f42",
+    background: "#0d1524",
+    border: isDragging ? "1px solid rgba(66,219,188,0.6)" : "1px solid rgba(255,255,255,0.07)",
     borderRadius: "10px",
     padding: "12px 14px",
     marginBottom: "8px",
     cursor: isDragging ? "grabbing" : "grab",
     boxShadow: isDragging
-      ? "0 16px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(99,102,241,0.35)"
+      ? "0 16px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(66,219,188,0.3)"
       : "none",
     opacity: isDragging ? 0.92 : 1,
     position: "relative",
@@ -144,7 +144,7 @@ function TaskCard({ task }: { task: Task }) {
                 width: "20px",
                 height: "20px",
                 borderRadius: "50%",
-                background: "#252f42",
+                background: "rgba(255,255,255,0.08)",
                 border: "1px solid #333d52",
                 display: "inline-flex",
                 alignItems: "center",
@@ -211,6 +211,10 @@ export default function BoardPage() {
   const [editingCell, setEditingCell] = useState<{ itemId: string; columnId: string } | null>(null);
   const [editingCellValue, setEditingCellValue] = useState<any>(null);
   const [serverMembers, setServerMembers] = useState<Array<{ id: string; name: string }>>([]);
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [aiDescription, setAiDescription] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor));
 
@@ -322,7 +326,7 @@ export default function BoardPage() {
       <main
         style={{
           minHeight: "100vh",
-          background: "#0d1117",
+          background: "#0d1524",
           fontFamily: FONT,
           display: "flex",
           alignItems: "center",
@@ -332,7 +336,7 @@ export default function BoardPage() {
       >
         <div
           style={{
-            background: "#161d2a",
+            background: "#111d2e",
             border: "1px solid #252f42",
             borderRadius: "16px",
             padding: "36px 40px",
@@ -341,7 +345,7 @@ export default function BoardPage() {
         >
           <p style={{ color: "#9ca3af", fontSize: "15px", margin: 0 }}>
             You must be logged in.{" "}
-            <a href="/login" style={{ color: "#6366f1", textDecoration: "none", fontWeight: 500 }}>
+            <a href="/login" style={{ color: "#42DBBC", textDecoration: "none", fontWeight: 500 }}>
               Log in
             </a>
           </p>
@@ -355,7 +359,7 @@ export default function BoardPage() {
       <main
         style={{
           minHeight: "100vh",
-          background: "#0d1117",
+          background: "#0d1524",
           fontFamily: FONT,
           padding: "28px 24px 40px",
         }}
@@ -365,7 +369,7 @@ export default function BoardPage() {
             style={{
               height: "11px",
               width: "100px",
-              background: "#252f42",
+              background: "rgba(255,255,255,0.08)",
               borderRadius: "6px",
               marginBottom: "12px",
               animation: "pulse 1.5s ease-in-out infinite",
@@ -375,7 +379,7 @@ export default function BoardPage() {
             style={{
               height: "24px",
               width: "180px",
-              background: "#252f42",
+              background: "rgba(255,255,255,0.08)",
               borderRadius: "12px",
               animation: "pulse 1.5s ease-in-out 0.1s infinite",
             }}
@@ -388,7 +392,7 @@ export default function BoardPage() {
               style={{
                 flexShrink: 0,
                 width: "272px",
-                background: "#161d2a",
+                background: "#111d2e",
                 border: "1px solid #252f42",
                 borderRadius: "14px",
                 padding: "16px",
@@ -398,7 +402,7 @@ export default function BoardPage() {
                 style={{
                   height: "12px",
                   width: "80px",
-                  background: "#252f42",
+                  background: "rgba(255,255,255,0.08)",
                   borderRadius: "6px",
                   marginBottom: "16px",
                   animation: `pulse 1.5s ease-in-out ${i * 0.12}s infinite`,
@@ -409,7 +413,7 @@ export default function BoardPage() {
                   key={j}
                   style={{
                     height: "68px",
-                    background: "#0d1117",
+                    background: "#0d1524",
                     border: "1px solid #252f42",
                     borderRadius: "10px",
                     marginBottom: "8px",
@@ -425,11 +429,52 @@ export default function BoardPage() {
     );
   }
 
+  async function generateWithAi() {
+    if (!aiDescription.trim()) {
+      setAiError("Please describe your project");
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError(null);
+
+    try {
+      const res = await fetch(`${getApiUrl()}/boards/${boardId}/ai-generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: 'include',
+        body: JSON.stringify({ description: aiDescription }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setAiError(data.error || "Failed to generate board");
+        return;
+      }
+
+      // Show success toast with warnings if any
+      let message = `Board generated! ${data.generated.groups} groups, ${data.generated.columns} columns, ${data.generated.items} items`;
+      if (data.warnings && data.warnings.length > 0) {
+        message += ` (${data.warnings.length} skipped)`;
+      }
+      // Toast would go here if we had one; for now just close modal and reload
+      setShowAiModal(false);
+      setAiDescription("");
+      loadBoard(); // Refresh board data
+    } catch (error) {
+      setAiError("Network error. Is the API running?");
+      console.error(error);
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   return (
     <main
       style={{
         minHeight: "100vh",
-        background: "#0d1117",
+        background: "#0d1524",
         fontFamily: FONT,
         padding: "28px 24px 40px",
       }}
@@ -452,14 +497,14 @@ export default function BoardPage() {
             fontFamily: FONT,
             transition: "color 0.15s ease",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#6366f1")}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#42DBBC")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "#4b5a72")}
         >
           ← Boards
         </button>
         <p
           style={{
-            color: "#6366f1",
+            color: "#42DBBC",
             fontSize: "12px",
             fontWeight: 600,
             letterSpacing: "0.06em",
@@ -469,22 +514,45 @@ export default function BoardPage() {
         >
           Project Board
         </p>
-        <h1
-          style={{
-            color: "#f3f4f6",
-            fontSize: "22px",
-            fontWeight: 700,
-            margin: 0,
-            letterSpacing: "-0.02em",
-          }}
-        >
-          {board.name}
-        </h1>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px", justifyContent: "space-between" }}>
+          <h1
+            style={{
+              color: "#f3f4f6",
+              fontSize: "22px",
+              fontWeight: 700,
+              margin: 0,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            {board.name}
+          </h1>
+          {board?.type === "TABLE" && (
+            <button
+              onClick={() => setShowAiModal(true)}
+              style={{
+                padding: "8px 14px",
+                fontSize: "13px",
+                fontWeight: 600,
+                color: "#f3f4f6",
+                background: "#42DBBC",
+                border: "none",
+                borderRadius: "6px",
+                cursor: "pointer",
+                transition: "background 0.15s ease",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "#4dd9c4")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "#42DBBC")}
+            >
+              ✨ Generate with AI
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Table Board View */}
       {board?.type === "TABLE" ? (
-        <div style={{ background: "#161d2a", borderRadius: "12px", overflow: "hidden" }}>
+        <div style={{ background: "#111d2e", borderRadius: "12px", overflow: "hidden" }}>
           {tableBoard ? (
             <>
               {/* Groups, Items, Columns UI */}
@@ -499,7 +567,7 @@ export default function BoardPage() {
                         key={g.id}
                         style={{
                           padding: "8px 12px",
-                          background: "#0d1117",
+                          background: "#0d1524",
                           border: "1px solid #252f42",
                           borderRadius: "6px",
                           color: "#cbd5e1",
@@ -526,7 +594,7 @@ export default function BoardPage() {
                       placeholder="New group... (Enter to add)"
                       style={{
                         padding: "8px 12px",
-                        background: "#0d1117",
+                        background: "#0d1524",
                         border: "1px solid #252f42",
                         borderRadius: "6px",
                         color: "#cbd5e1",
@@ -546,8 +614,8 @@ export default function BoardPage() {
                         key={c.id}
                         style={{
                           padding: "8px 12px",
-                          background: "#0d1117",
-                          border: "1px solid #6366f1",
+                          background: "#0d1524",
+                          border: "1px solid #42DBBC",
                           borderRadius: "6px",
                           color: "#cbd5e1",
                           fontSize: "12px",
@@ -568,7 +636,7 @@ export default function BoardPage() {
                           style={{
                             fontSize: "11px",
                             padding: "2px 4px",
-                            background: "#7f1d1d",
+                            background: "rgba(239,68,68,0.25)",
                             color: "#fff",
                             border: "none",
                             borderRadius: "3px",
@@ -586,7 +654,7 @@ export default function BoardPage() {
                         placeholder="Column name..."
                         style={{
                           padding: "8px 12px",
-                          background: "#0d1117",
+                          background: "#0d1524",
                           border: "1px solid #252f42",
                           borderRadius: "6px",
                           color: "#cbd5e1",
@@ -599,7 +667,7 @@ export default function BoardPage() {
                         onChange={(e) => setNewColumnType(e.target.value as any)}
                         style={{
                           padding: "8px 12px",
-                          background: "#0d1117",
+                          background: "#0d1524",
                           border: "1px solid #252f42",
                           borderRadius: "6px",
                           color: "#cbd5e1",
@@ -653,7 +721,7 @@ export default function BoardPage() {
                         }}
                         style={{
                           padding: "8px 12px",
-                          background: "#6366f1",
+                          background: "#42DBBC",
                           color: "#fff",
                           border: "none",
                           borderRadius: "6px",
@@ -693,7 +761,7 @@ export default function BoardPage() {
                           style={{
                             fontSize: "12px",
                             padding: "4px 8px",
-                            background: "#6366f1",
+                            background: "#42DBBC",
                             color: "#fff",
                             border: "none",
                             borderRadius: "4px",
@@ -713,7 +781,7 @@ export default function BoardPage() {
                           style={{
                             fontSize: "12px",
                             padding: "4px 8px",
-                            background: "#7f1d1d",
+                            background: "rgba(239,68,68,0.25)",
                             color: "#fff",
                             border: "none",
                             borderRadius: "4px",
@@ -751,7 +819,7 @@ export default function BoardPage() {
                                 style={{
                                   fontSize: "11px",
                                   padding: "2px 6px",
-                                  background: "#7f1d1d",
+                                  background: "rgba(239,68,68,0.25)",
                                   color: "#fff",
                                   border: "none",
                                   borderRadius: "3px",
@@ -791,7 +859,7 @@ export default function BoardPage() {
                               const saveCell = async (value: any) => {
                                 if (value === null || value === undefined || value === "") {
                                   // Clear the cell
-                                  await fetch("${getApiUrl()}/cells", {
+                                  await fetch(`${getApiUrl()}/cells`, {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
                                     credentials: 'include',
@@ -808,7 +876,7 @@ export default function BoardPage() {
                                     case "PERSON": cellValue = { userId: value }; break;
                                     default: cellValue = value;
                                   }
-                                  await fetch("${getApiUrl()}/cells", {
+                                  await fetch(`${getApiUrl()}/cells`, {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
                                     credentials: 'include',
@@ -856,8 +924,8 @@ export default function BoardPage() {
                                         style={{
                                           width: "100%",
                                           padding: "4px",
-                                          background: "#0d1117",
-                                          border: "1px solid #6366f1",
+                                          background: "#0d1524",
+                                          border: "1px solid #42DBBC",
                                           borderRadius: "4px",
                                           color: "#cbd5e1",
                                           fontSize: "12px",
@@ -878,8 +946,8 @@ export default function BoardPage() {
                                         style={{
                                           width: "100%",
                                           padding: "4px",
-                                          background: "#0d1117",
-                                          border: "1px solid #6366f1",
+                                          background: "#0d1524",
+                                          border: "1px solid #42DBBC",
                                           borderRadius: "4px",
                                           color: "#cbd5e1",
                                           fontSize: "12px",
@@ -896,8 +964,8 @@ export default function BoardPage() {
                                         style={{
                                           width: "100%",
                                           padding: "4px",
-                                          background: "#0d1117",
-                                          border: "1px solid #6366f1",
+                                          background: "#0d1524",
+                                          border: "1px solid #42DBBC",
                                           borderRadius: "4px",
                                           color: "#cbd5e1",
                                           fontSize: "12px",
@@ -915,8 +983,8 @@ export default function BoardPage() {
                                         style={{
                                           width: "100%",
                                           padding: "4px",
-                                          background: "#0d1117",
-                                          border: "1px solid #6366f1",
+                                          background: "#0d1524",
+                                          border: "1px solid #42DBBC",
                                           borderRadius: "4px",
                                           color: "#cbd5e1",
                                           fontSize: "12px",
@@ -941,8 +1009,8 @@ export default function BoardPage() {
                                         style={{
                                           width: "100%",
                                           padding: "4px",
-                                          background: "#0d1117",
-                                          border: "1px solid #6366f1",
+                                          background: "#0d1524",
+                                          border: "1px solid #42DBBC",
                                           borderRadius: "4px",
                                           color: "#cbd5e1",
                                           fontSize: "12px",
@@ -1010,7 +1078,7 @@ export default function BoardPage() {
               style={{
                 flexShrink: 0,
                 width: "272px",
-                background: "#161d2a",
+                background: "#111d2e",
                 border: "1px solid #252f42",
                 borderRadius: "14px",
                 padding: "16px",
@@ -1039,7 +1107,7 @@ export default function BoardPage() {
                 </h3>
                 <span
                   style={{
-                    background: "#252f42",
+                    background: "rgba(255,255,255,0.08)",
                     color: "#6b7280",
                     fontSize: "12px",
                     fontWeight: 500,
@@ -1076,7 +1144,7 @@ export default function BoardPage() {
                       padding: "10px 12px",
                       fontSize: "14px",
                       color: "#f3f4f6",
-                      background: "#0d1117",
+                      background: "#0d1524",
                       border: "1px solid #252f42",
                       borderRadius: "8px",
                       outline: "none",
@@ -1084,8 +1152,8 @@ export default function BoardPage() {
                       marginBottom: "8px",
                       transition: "border-color 0.15s ease",
                     }}
-                    onFocus={(e) => (e.currentTarget.style.borderColor = "#6366f1")}
-                    onBlur={(e) => (e.currentTarget.style.borderColor = "#252f42")}
+                    onFocus={(e) => (e.currentTarget.style.borderColor = "#42DBBC")}
+                    onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)")}
                   />
                   <div style={{ display: "flex", gap: "6px" }}>
                     <button
@@ -1096,14 +1164,14 @@ export default function BoardPage() {
                         fontSize: "13px",
                         fontWeight: 600,
                         color: "#fff",
-                        background: "#6366f1",
+                        background: "#42DBBC",
                         border: "none",
                         borderRadius: "8px",
                         cursor: "pointer",
                         transition: "background 0.15s ease",
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#7c7ff2")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "#6366f1")}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#4dd9c4")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "#42DBBC")}
                     >
                       Add task
                     </button>
@@ -1124,7 +1192,7 @@ export default function BoardPage() {
                         e.currentTarget.style.color = "#f3f4f6";
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = "#252f42";
+                        e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
                         e.currentTarget.style.color = "#9ca3af";
                       }}
                     >
@@ -1149,11 +1217,11 @@ export default function BoardPage() {
                     transition: "border-color 0.15s ease, color 0.15s ease",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = "#6366f1";
-                    e.currentTarget.style.color = "#6366f1";
+                    e.currentTarget.style.borderColor = "#42DBBC";
+                    e.currentTarget.style.color = "#42DBBC";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = "#252f42";
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
                     e.currentTarget.style.color = "#6b7280";
                   }}
                 >
@@ -1164,6 +1232,105 @@ export default function BoardPage() {
           ))}
         </div>
       </DndContext>
+      )}
+
+      {/* AI Generation Modal */}
+      {showAiModal && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => !aiLoading && setShowAiModal(false)}
+        >
+          <div
+            style={{
+              background: "#111d2e",
+              border: "1px solid #252f42",
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "500px",
+              width: "90%",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ color: "#f3f4f6", margin: "0 0 16px", fontSize: "18px", fontWeight: 600 }}>
+              Generate Board with AI
+            </h2>
+            <textarea
+              value={aiDescription}
+              onChange={(e) => setAiDescription(e.target.value)}
+              placeholder="Describe your project (e.g., 'Sprint plan for a mobile app launch')"
+              disabled={aiLoading}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                fontSize: "13px",
+                color: "#f3f4f6",
+                background: "#0d1524",
+                border: "1px solid #252f42",
+                borderRadius: "6px",
+                outline: "none",
+                minHeight: "100px",
+                fontFamily: "inherit",
+                resize: "none",
+                boxSizing: "border-box",
+                marginBottom: "12px",
+              }}
+            />
+            {aiError && (
+              <p style={{ color: "#f87171", fontSize: "12px", margin: "0 0 12px" }}>
+                ⚠️ {aiError}
+              </p>
+            )}
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => !aiLoading && setShowAiModal(false)}
+                disabled={aiLoading}
+                style={{
+                  padding: "8px 14px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: "#9ca3af",
+                  background: "transparent",
+                  border: "1px solid #252f42",
+                  borderRadius: "6px",
+                  cursor: aiLoading ? "default" : "pointer",
+                  opacity: aiLoading ? 0.5 : 1,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={generateWithAi}
+                disabled={aiLoading}
+                style={{
+                  padding: "8px 14px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  color: "#f3f4f6",
+                  background: aiLoading ? "rgba(66,219,188,0.4)" : "#42DBBC",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: aiLoading ? "default" : "pointer",
+                  transition: "background 0.15s ease",
+                }}
+                onMouseEnter={(e) => !aiLoading && (e.currentTarget.style.background = "#4dd9c4")}
+                onMouseLeave={(e) => !aiLoading && (e.currentTarget.style.background = "#42DBBC")}
+              >
+                {aiLoading ? "Generating..." : "Generate"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
+import { authenticateRequest } from "../lib/auth";
 
 export async function serverRoutes(app: FastifyInstance) {
   app.post("/servers", async (request, reply) => {
@@ -90,6 +91,85 @@ export async function serverRoutes(app: FastifyInstance) {
     });
 
     return memberships.map((m) => m.server);
+  });
+
+  // Create a channel in a server
+  app.post("/servers/:serverId/channels", async (request, reply) => {
+    const { serverId } = request.params as { serverId: string };
+    const { name, type } = request.body as { name: string; type?: "TEXT" | "VOICE" };
+
+    if (!name || name.trim().length < 1 || name.trim().length > 50) {
+      return reply.status(400).send({ error: "Channel name must be 1–50 characters" });
+    }
+
+    const channelType = type === "VOICE" ? "VOICE" : "TEXT";
+
+    try {
+      const last = await prisma.channel.findFirst({
+        where: { serverId },
+        orderBy: { position: "desc" },
+        select: { position: true },
+      });
+
+      const channel = await prisma.channel.create({
+        data: {
+          name: name.trim().toLowerCase().replace(/\s+/g, "-"),
+          type: channelType,
+          serverId,
+          position: (last?.position ?? -1) + 1,
+        },
+      });
+
+      return reply.status(201).send(channel);
+    } catch (err) {
+      console.error("Failed to create channel:", err);
+      return reply.status(500).send({ error: "Failed to create channel" });
+    }
+  });
+
+  // Delete a channel
+  app.delete("/channels/:channelId", async (request, reply) => {
+    const { channelId } = request.params as { channelId: string };
+
+    try {
+      // Check the server still has at least one channel after deletion
+      const channel = await prisma.channel.findUnique({ where: { id: channelId } });
+      if (!channel) return reply.status(404).send({ error: "Channel not found" });
+
+      const remaining = await prisma.channel.count({ where: { serverId: channel.serverId } });
+      if (remaining <= 1) {
+        return reply.status(400).send({ error: "Cannot delete the last channel" });
+      }
+
+      await prisma.channel.delete({ where: { id: channelId } });
+      return reply.status(204).send();
+    } catch (err) {
+      console.error("Failed to delete channel:", err);
+      return reply.status(500).send({ error: "Failed to delete channel" });
+    }
+  });
+
+  // Update user profile (name)
+  app.patch("/users/:userId/profile", { preHandler: authenticateRequest }, async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    const { name } = request.body as { name?: string };
+
+    if (request.user?.id !== userId) {
+      return reply.status(403).send({ error: "Forbidden" });
+    }
+
+    if (name !== undefined) {
+      if (!name.trim() || name.trim().length < 1 || name.trim().length > 50) {
+        return reply.status(400).send({ error: "Name must be 1–50 characters" });
+      }
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: { ...(name !== undefined && { name: name.trim() }) },
+      select: { id: true, name: true, email: true },
+    });
+    return updated;
   });
 
   // Get all members of a server (for PERSON column dropdown)

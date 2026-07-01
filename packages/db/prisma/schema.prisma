@@ -157,6 +157,7 @@ model Board {
   serverId              String
   createdById           String
   createdAt             DateTime      @default(now())
+  deletedAt             DateTime?
   server                Server        @relation(fields: [serverId], references: [id])
   columns               Column[]
   tasks                 Task[]

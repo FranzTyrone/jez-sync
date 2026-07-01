@@ -1,15 +1,11 @@
 "use client";
 
 import { getApiUrl } from '@/lib/config';
-
 import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
-type Server = {
-  id: string;
-  channels: { id: string }[];
-};
+type Server = { id: string; channels: { id: string }[] };
 
 export default function Home() {
   const { data: session, status } = useSession();
@@ -17,14 +13,9 @@ export default function Home() {
 
   useEffect(() => {
     if (status === "loading") return;
-
-    if (!session) {
-      router.push("/login");
-      return;
-    }
-
-    fetch(`${getApiUrl()}/users/${session.user.id}/servers`, { credentials: 'include' })
-      .then((res) => res.json())
+    if (!session) { router.push("/login"); return; }
+    fetch(`${getApiUrl()}/users/${session.user.id}/servers`, { credentials: "include" })
+      .then((r) => r.json())
       .then((servers: Server[]) => {
         if (servers.length > 0 && servers[0].channels.length > 0) {
           router.push(`/servers/${servers[0].id}/channels/${servers[0].channels[0].id}`);
@@ -35,36 +26,27 @@ export default function Home() {
   }, [session, status, router]);
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "#0d1117",
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        gap: "20px",
-      }}
-    >
-      <div
-        style={{
-          width: "36px",
-          height: "36px",
-          borderRadius: "50%",
-          border: "2.5px solid #252f42",
-          borderTopColor: "#6366f1",
+    <main style={{
+      minHeight: "100vh", display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      backgroundColor: "#07090f",
+      fontFamily: "'Segoe UI', system-ui, sans-serif",
+      gap: "16px",
+    }}>
+      {/* Spinner */}
+      <div style={{ position: "relative", width: "44px", height: "44px" }}>
+        <div style={{
+          position: "absolute", inset: 0, borderRadius: "50%",
+          border: "2.5px solid rgba(66,219,188,0.15)",
+        }} />
+        <div style={{
+          position: "absolute", inset: 0, borderRadius: "50%",
+          border: "2.5px solid transparent",
+          borderTopColor: "#42DBBC",
           animation: "spin 0.75s linear infinite",
-        }}
-      />
-      <p
-        style={{
-          color: "#6b7280",
-          fontSize: "14px",
-          margin: 0,
-          letterSpacing: "0.01em",
-        }}
-      >
+        }} />
+      </div>
+      <p style={{ color: "#475569", fontSize: "13px", margin: 0, letterSpacing: "0.03em" }}>
         Jez Sync
       </p>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

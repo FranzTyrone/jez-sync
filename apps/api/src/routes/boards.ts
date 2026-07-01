@@ -72,7 +72,7 @@ export async function boardRoutes(app: FastifyInstance) {
     }
 
     const allBoards = await prisma.board.findMany({
-      where: { serverId },
+      where: { serverId, deletedAt: null },
       orderBy: { createdAt: "asc" },
       include: {
         _count: { select: { tasks: true } },
@@ -249,11 +249,72 @@ export async function boardRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: "Not authorized to delete this board" });
     }
 
-    // Delete in order: tasks → columns → board
+    // Soft-delete: set deletedAt timestamp
+    await prisma.board.update({ where: { id: boardId }, data: { deletedAt: new Date() } });
+
+    return { success: true };
+  });
+
+  // List soft-deleted boards for a server (board trash)
+  app.get("/servers/:serverId/boards/trash", { preHandler: authenticateRequest }, async (request, reply) => {
+    const { serverId } = request.params as { serverId: string };
+    const userId = request.user?.id;
+    if (!userId) return reply.status(401).send({ error: "Unauthorized" });
+
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const boards = await prisma.board.findMany({
+      where: { serverId, deletedAt: { not: null, gte: thirtyDaysAgo } },
+      select: { id: true, name: true, type: true, deletedAt: true, createdById: true },
+      orderBy: { deletedAt: "desc" },
+    });
+    return boards;
+  });
+
+  // Restore a soft-deleted board
+  app.post("/boards/:boardId/restore", { preHandler: authenticateRequest }, async (request, reply) => {
+    const { boardId } = request.params as { boardId: string };
+    const userId = request.user?.id;
+    if (!userId) return reply.status(401).send({ error: "Unauthorized" });
+
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { serverId: true, createdById: true, deletedAt: true },
+    });
+    if (!board || !board.deletedAt) return reply.status(404).send({ error: "Board not found in trash" });
+
+    const server = await prisma.server.findUnique({ where: { id: board.serverId }, select: { ownerId: true } });
+    if (!server) return reply.status(404).send({ error: "Server not found" });
+
+    if (userId !== board.createdById && userId !== server.ownerId) {
+      return reply.status(403).send({ error: "Not authorized" });
+    }
+
+    const restored = await prisma.board.update({ where: { id: boardId }, data: { deletedAt: null } });
+    return restored;
+  });
+
+  // Permanently delete a board from trash
+  app.delete("/boards/:boardId/permanent", { preHandler: authenticateRequest }, async (request, reply) => {
+    const { boardId } = request.params as { boardId: string };
+    const userId = request.user?.id;
+    if (!userId) return reply.status(401).send({ error: "Unauthorized" });
+
+    const board = await prisma.board.findUnique({
+      where: { id: boardId },
+      select: { serverId: true, createdById: true, deletedAt: true },
+    });
+    if (!board || !board.deletedAt) return reply.status(404).send({ error: "Board not found in trash" });
+
+    const server = await prisma.server.findUnique({ where: { id: board.serverId }, select: { ownerId: true } });
+    if (!server) return reply.status(404).send({ error: "Server not found" });
+
+    if (userId !== board.createdById && userId !== server.ownerId) {
+      return reply.status(403).send({ error: "Not authorized" });
+    }
+
     await prisma.task.deleteMany({ where: { boardId } });
     await prisma.column.deleteMany({ where: { boardId } });
     await prisma.board.delete({ where: { id: boardId } });
-
     return { success: true };
   });
 

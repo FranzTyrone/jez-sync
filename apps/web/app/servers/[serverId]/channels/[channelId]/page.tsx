@@ -1,7 +1,6 @@
 "use client";
 
 import { getApiUrl } from '@/lib/config';
-
 import { useEffect, useState, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useParams } from "next/navigation";
@@ -9,118 +8,114 @@ import { getSocket } from "@/lib/socket";
 import VoiceChannel from "@/components/voice/VoiceChannel";
 import { useVoice } from "@/lib/VoiceContext";
 
-type Reaction = {
-  emoji: string;
-  count: number;
-  userIds: string[];
-};
-
+type Reaction = { emoji: string; count: number; userIds: string[] };
 type Message = {
-  id: string;
-  content: string | null;
-  authorId: string;
-  author: { id: string; name: string };
-  createdAt: string;
-  editedAt?: string;
-  deletedAt?: string;
+  id: string; content: string | null;
+  authorId: string; author: { id: string; name: string };
+  createdAt: string; editedAt?: string; deletedAt?: string;
   reactions?: Reaction[];
 };
 
 const EMOJI_SET = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
 
+const C = {
+  bg:     "#0d1524",
+  card:   "#111d2e",
+  border: "rgba(255,255,255,0.07)",
+  t1:     "#f1f5f9",
+  t2:     "#94a3b8",
+  t3:     "#475569",
+  teal:   "#42DBBC",
+  blue:   "#21579A",
+  grad:   "linear-gradient(135deg, #42DBBC 0%, #21579A 100%)",
+  red:    "#ef4444",
+};
+
+function initials(name: string) {
+  return name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+}
+
+function formatTime(iso: string) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+}
+
 export default function ChannelPage() {
   const { data: session } = useSession();
   const params = useParams();
   const channelId = params.channelId as string;
-  const serverId = params.serverId as string;
-  const socket = getSocket();
+  const serverId  = params.serverId  as string;
+  const socket    = getSocket();
   const { voiceState } = useVoice();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [connected, setConnected] = useState(false);
-  const [inviteUrl, setInviteUrl] = useState("");
-  const [channelType, setChannelType] = useState<"TEXT" | "VOICE" | null>(null);
-  const [channelName, setChannelName] = useState("");
-  const [serverOwnerId, setServerOwnerId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [messages,       setMessages]       = useState<Message[]>([]);
+  const [input,          setInput]          = useState("");
+  const [connected,      setConnected]      = useState(false);
+  const [inviteUrl,      setInviteUrl]      = useState("");
+  const [channelType,    setChannelType]    = useState<"TEXT"|"VOICE"|null>(null);
+  const [channelName,    setChannelName]    = useState("");
+  const [serverOwnerId,  setServerOwnerId]  = useState<string|null>(null);
+  const [editingId,      setEditingId]      = useState<string|null>(null);
   const [editingContent, setEditingContent] = useState("");
-  const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
+  const [showEmojiPicker,setShowEmojiPicker]= useState<string|null>(null);
+  const [inputFocused,   setInputFocused]   = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!serverId || !session?.user?.id) return;
-    fetch(`${getApiUrl()}/users/${session.user.id}/servers`, { credentials: 'include' })
-      .then((res) => res.json())
+    fetch(`${getApiUrl()}/users/${session.user.id}/servers`, { credentials: "include" })
+      .then((r) => r.json())
       .then((servers: any[]) => {
-        const server = servers.find((s) => s.id === serverId);
+        const server  = servers.find((s) => s.id === serverId);
         const channel = server?.channels.find((c: any) => c.id === channelId);
-        if (channel) {
-          setChannelType(channel.type);
-          setChannelName(channel.name);
-        }
-        if (server) {
-          setServerOwnerId(server.ownerId);
-        }
+        if (channel) { setChannelType(channel.type); setChannelName(channel.name); }
+        if (server)  { setServerOwnerId(server.ownerId); }
       });
   }, [serverId, channelId, session?.user?.id]);
 
   useEffect(() => {
     if (!channelId || !session?.user?.id) return;
-
     socket.connect();
     socket.emit("user:auth", { userId: session.user.id });
 
-    function handleConnect() {
-      setConnected(true);
-      socket.emit("channel:join", channelId);
+    function handleConnect()    { setConnected(true);  socket.emit("channel:join", channelId); }
+    function handleDisconnect() { setConnected(false); }
+    function handleMessage(m: Message) { setMessages((p) => [...p, m]); }
+    function handleUpdated(m: Message) {
+      setMessages((p) => p.map((x) => x.id === m.id ? m : x));
+      setEditingId(null); setEditingContent("");
     }
-    function handleDisconnect() {
-      setConnected(false);
+    function handleDeleted(d: { messageId: string; deletedAt: string }) {
+      setMessages((p) => p.map((m) => m.id === d.messageId ? { ...m, deletedAt: d.deletedAt, content: null } : m));
     }
-    function handleMessage(message: Message) {
-      setMessages((prev) => [...prev, message]);
-    }
-    function handleMessageUpdated(message: Message) {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === message.id ? message : m))
-      );
-      setEditingId(null);
-      setEditingContent("");
-    }
-    function handleMessageDeleted(data: { messageId: string; deletedAt: string }) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === data.messageId ? { ...m, deletedAt: data.deletedAt, content: null } : m
-        )
-      );
-    }
-    function handleReactionsUpdated(data: {
-      messageId: string;
-      reactions: Reaction[];
-    }) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === data.messageId ? { ...m, reactions: data.reactions } : m
-        )
-      );
+    function handleReactions(d: { messageId: string; reactions: Reaction[] }) {
+      setMessages((p) => p.map((m) => m.id === d.messageId ? { ...m, reactions: d.reactions } : m));
     }
 
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-    socket.on("message:receive", handleMessage);
-    socket.on("message:updated", handleMessageUpdated);
-    socket.on("message:deleted", handleMessageDeleted);
-    socket.on("message:reactions", handleReactionsUpdated);
-
+    socket.on("connect",                handleConnect);
+    socket.on("disconnect",             handleDisconnect);
+    socket.on("message:receive",        handleMessage);
+    socket.on("message:updated",        handleUpdated);
+    socket.on("message:deleted",        handleDeleted);
+    socket.on("message:reactions",      handleReactions);
     if (socket.connected) handleConnect();
 
     return () => {
-      socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
-      socket.off("message:receive", handleMessage);
-      socket.off("message:updated", handleMessageUpdated);
-      socket.off("message:deleted", handleMessageDeleted);
-      socket.off("message:reactions", handleReactionsUpdated);
+      socket.off("connect",             handleConnect);
+      socket.off("disconnect",          handleDisconnect);
+      socket.off("message:receive",     handleMessage);
+      socket.off("message:updated",     handleUpdated);
+      socket.off("message:deleted",     handleDeleted);
+      socket.off("message:reactions",   handleReactions);
     };
   }, [channelId, session?.user?.id]);
 
@@ -129,30 +124,15 @@ export default function ChannelPage() {
     const url = new URL(`${getApiUrl()}/channels/${channelId}/messages`);
     url.searchParams.set("userId", session.user.id);
     fetch(url.toString())
-      .then(async (res) => {
-        if (!res.ok) {
-          const text = await res.text();
-          console.error("Fetch failed:", res.status, text);
-          setMessages([]);
-          return;
-        }
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setMessages(data);
-        } else {
-          console.error("Response is not an array:", data);
-          setMessages([]);
-        }
+      .then(async (r) => {
+        if (!r.ok) { setMessages([]); return; }
+        const d = await r.json();
+        setMessages(Array.isArray(d) ? d : []);
       })
-      .catch((err) => {
-        console.error("Message fetch error:", err.message, err.stack);
-        setMessages([]);
-      });
+      .catch(() => setMessages([]));
   }, [channelId, session?.user?.id]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   function sendMessage() {
     if (!input.trim() || !session?.user?.id) return;
@@ -166,7 +146,7 @@ export default function ChannelPage() {
   }
 
   function deleteMessage(messageId: string) {
-    if (!window.confirm("Delete this message? This cannot be undone.")) return;
+    if (!window.confirm("Delete this message?")) return;
     socket.emit("message:delete", { messageId });
   }
 
@@ -176,569 +156,400 @@ export default function ChannelPage() {
 
   async function generateInvite() {
     if (!session?.user?.id) return;
-    const res = await fetch(
-      `${getApiUrl()}/servers/${serverId}/invites`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ createdBy: session.user.id }),
-      },
-    );
-    const data = await res.json();
-    setInviteUrl(data.url);
-  }
-
-  function initialsOf(name: string) {
-    return name
-      .split(" ")
-      .map((p) => p[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
+    const res = await fetch(`${getApiUrl()}/servers/${serverId}/invites`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ createdBy: session.user.id }),
+    });
+    const d = await res.json();
+    setInviteUrl(d.url);
   }
 
   if (!session) {
     return (
-      <main
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          fontFamily: "'Segoe UI', sans-serif",
-          background: "#0d1117",
-        }}
-      >
-        <p style={{ color: "#8897ae" }}>
-          You must be logged in.{" "}
-          <a href="/login" style={{ color: "#6366f1", fontWeight: 600 }}>
-            Log in
-          </a>
+      <main style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", background: C.bg }}>
+        <p style={{ color: C.t3 }}>
+          Please{" "}
+          <a href="/login" style={{ color: C.teal, fontWeight: 600, textDecoration: "none" }}>log in</a>
+          {" "}to continue.
         </p>
       </main>
     );
   }
 
+  // Group messages by date for dividers
+  const groupedMessages: { date: string; messages: Message[] }[] = [];
+  for (const msg of messages) {
+    const dateLabel = formatDate(msg.createdAt);
+    const last = groupedMessages[groupedMessages.length - 1];
+    if (last && last.date === dateLabel) last.messages.push(msg);
+    else groupedMessages.push({ date: dateLabel, messages: [msg] });
+  }
+
   return (
-    <main
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        minHeight: 0,
-        fontFamily: "'Segoe UI', sans-serif",
-        background: "#0d1117",
-      }}
-    >
-      <div
-        style={{
-          padding: "14px 20px",
-          background: "#0d1117",
-          borderBottom: "1px solid #252f42",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ color: "#4b5a72", fontSize: "18px" }}>
-            {channelType === "VOICE" ? "\u{1F50A}" : "#"}
+    <main style={{
+      display: "flex", flexDirection: "column", height: "100%", minHeight: 0,
+      fontFamily: "'Segoe UI', system-ui, sans-serif", background: C.bg,
+    }}>
+      {/* ── Channel header ── */}
+      <div style={{
+        padding: "0 20px", height: "52px", flexShrink: 0,
+        background: C.bg, borderBottom: `1px solid ${C.border}`,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ color: C.teal, fontSize: "16px", fontWeight: 300, opacity: 0.8 }}>
+            {channelType === "VOICE" ? "🔊" : "#"}
           </span>
-          <h1
-            style={{
-              fontSize: "16px",
-              fontWeight: 600,
-              color: "#e2e8f0",
-              margin: 0,
-            }}
-          >
-            {channelName || "..."}
-          </h1>
-          {channelType === "VOICE" ? (
-            <span
-              style={{
-                fontSize: "11px",
-                color: voiceState?.channelId === channelId ? "#10b981" : "#4b5a72",
-                background: voiceState?.channelId === channelId ? "#0d2b20" : "transparent",
-                padding: "2px 8px",
-                borderRadius: "10px",
-                fontWeight: 600,
-              }}
-            >
-              {voiceState?.channelId === channelId ? "Voice Connected" : "Not in Voice"}
-            </span>
-          ) : (
-            <span
-              style={{
-                fontSize: "11px",
-                color: connected ? "#10b981" : "#ef4444",
-                background: connected ? "#0d2b20" : "#2d1515",
-                padding: "2px 8px",
-                borderRadius: "10px",
-                fontWeight: 600,
-              }}
-            >
-              {connected ? "Connected" : "Disconnected"}
-            </span>
-          )}
+          <span style={{ fontSize: "15px", fontWeight: 700, color: C.t1, letterSpacing: "-0.01em" }}>
+            {channelName || "…"}
+          </span>
+          <span style={{
+            fontSize: "10px", fontWeight: 700,
+            padding: "3px 9px", borderRadius: "100px",
+            letterSpacing: "0.05em",
+            ...(channelType === "VOICE"
+              ? voiceState?.channelId === channelId
+                ? { color: "#10b981", background: "rgba(16,185,129,0.12)" }
+                : { color: C.t3,     background: "rgba(255,255,255,0.05)" }
+              : connected
+                ? { color: "#10b981", background: "rgba(16,185,129,0.12)" }
+                : { color: C.red,     background: "rgba(239,68,68,0.12)"  }
+            ),
+          }}>
+            {channelType === "VOICE"
+              ? voiceState?.channelId === channelId ? "Connected" : "Not in voice"
+              : connected ? "Live" : "Offline"
+            }
+          </span>
         </div>
 
         <button
           onClick={generateInvite}
           style={{
-            padding: "7px 14px",
-            borderRadius: "8px",
-            border: "1px solid #252f42",
-            background: "#161d2a",
-            color: "#e2e8f0",
-            fontSize: "13px",
-            fontWeight: 500,
-            cursor: "pointer",
+            padding: "6px 14px", borderRadius: "8px",
+            border: `1px solid ${C.border}`,
+            background: "rgba(66,219,188,0.07)",
+            color: C.teal, fontSize: "12px", fontWeight: 600, cursor: "pointer",
+            transition: "background 0.15s, border-color 0.15s",
+            letterSpacing: "0.02em",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background = "rgba(66,219,188,0.15)";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(66,219,188,0.4)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background = "rgba(66,219,188,0.07)";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = C.border;
           }}
         >
           Invite people
         </button>
       </div>
 
+      {/* Invite URL banner */}
       {inviteUrl && (
-        <div
-          style={{
-            background: "#0d2b20",
-            borderBottom: "1px solid #064e3b",
-            padding: "10px 20px",
-            fontSize: "13px",
-            color: "#10b981",
-            wordBreak: "break-all",
-            flexShrink: 0,
-          }}
-        >
-          {inviteUrl}
+        <div style={{
+          padding: "10px 20px", flexShrink: 0,
+          background: "rgba(16,185,129,0.08)", borderBottom: "1px solid rgba(16,185,129,0.2)",
+          display: "flex", alignItems: "center", gap: "10px",
+        }}>
+          <span style={{ fontSize: "12px", color: "#10b981", fontWeight: 700 }}>INVITE LINK</span>
+          <span style={{ fontSize: "12px", color: "#94a3b8", wordBreak: "break-all" }}>{inviteUrl}</span>
         </div>
       )}
 
+      {/* Voice channel embed */}
       {channelType === "VOICE" && (
-        <div
-          style={{
-            background: "#0d1117",
-            flex: 1,
-            display: "flex",
-            overflow: "hidden",
-            minHeight: 0,
-          }}
-        >
+        <div style={{ background: C.bg, flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
           <VoiceChannel channelId={channelId} />
         </div>
       )}
 
+      {/* ── Message list ── */}
       <div
         style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "16px 20px",
-          background: "#0d1117",
-          display: channelType === "VOICE" ? "none" : "block",
-          minHeight: 0,
+          flex: 1, overflowY: "auto", padding: "8px 0 4px",
+          display: channelType === "VOICE" ? "none" : "block", minHeight: 0,
         }}
+        onClick={() => setShowEmojiPicker(null)}
       >
         {!Array.isArray(messages) || messages.length === 0 ? (
-          <p
-            style={{
-              color: "#4b5a72",
-              fontSize: "13px",
-              textAlign: "center",
-              marginTop: "40px",
-            }}
-          >
-            {Array.isArray(messages) ? "No messages yet. Say hello!" : "Loading messages..."}
-          </p>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "12px", paddingTop: "40px" }}>
+            <div style={{
+              width: "56px", height: "56px", borderRadius: "16px",
+              background: "rgba(66,219,188,0.1)", border: "1px solid rgba(66,219,188,0.2)",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px",
+            }}>
+              {Array.isArray(messages) ? "👋" : "⏳"}
+            </div>
+            <p style={{ color: C.t3, fontSize: "14px", margin: 0, textAlign: "center" }}>
+              {Array.isArray(messages) ? `Start the conversation in #${channelName}` : "Loading messages…"}
+            </p>
+          </div>
         ) : (
-          messages.map((msg) => {
-            const canEdit = msg.authorId === session.user?.id && !msg.deletedAt;
-            const canDelete =
-              (msg.authorId === session.user?.id || serverOwnerId === session.user?.id) &&
-              !msg.deletedAt;
-            const isEditing = editingId === msg.id;
+          groupedMessages.map(({ date, messages: msgs }) => (
+            <div key={date}>
+              {/* Date divider */}
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "16px 20px 8px" }}>
+                <div style={{ flex: 1, height: "1px", backgroundColor: C.border }} />
+                <span style={{ fontSize: "11px", fontWeight: 600, color: C.t3, whiteSpace: "nowrap" }}>{date}</span>
+                <div style={{ flex: 1, height: "1px", backgroundColor: C.border }} />
+              </div>
 
-            return (
-              <div
-                key={msg.id}
-                style={{ marginBottom: "14px", position: "relative" }}
-                onMouseEnter={(e) => {
-                  const menu = e.currentTarget.querySelector("[data-menu]") as HTMLElement;
-                  if (menu) menu.style.opacity = "1";
-                }}
-                onMouseLeave={(e) => {
-                  const menu = e.currentTarget.querySelector("[data-menu]") as HTMLElement;
-                  if (menu) menu.style.opacity = "0";
-                }}
-              >
-                <div style={{ display: "flex", gap: "10px" }}>
+              {msgs.map((msg) => {
+                const canEdit   = msg.authorId === session.user?.id && !msg.deletedAt;
+                const canDelete = (msg.authorId === session.user?.id || serverOwnerId === session.user?.id) && !msg.deletedAt;
+                const isEditing = editingId === msg.id;
+
+                return (
                   <div
-                    style={{
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "50%",
-                      background: "#1e2d45",
-                      border: "1.5px solid #252f42",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#e2e8f0",
-                      fontSize: "11px",
-                      fontWeight: 600,
-                      flexShrink: 0,
+                    key={msg.id}
+                    style={{ padding: "4px 20px", position: "relative" }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLDivElement).style.backgroundColor = "rgba(255,255,255,0.025)";
+                      const menu = e.currentTarget.querySelector("[data-menu]") as HTMLElement;
+                      if (menu) menu.style.opacity = "1";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLDivElement).style.backgroundColor = "transparent";
+                      const menu = e.currentTarget.querySelector("[data-menu]") as HTMLElement;
+                      if (menu) menu.style.opacity = "0";
                     }}
                   >
-                    {initialsOf(msg.author.name)}
-                  </div>
+                    <div style={{ display: "flex", gap: "12px", alignItems: "flex-start" }}>
+                      {/* Avatar */}
+                      <div style={{
+                        width: "36px", height: "36px", borderRadius: "50%", flexShrink: 0,
+                        background: C.grad,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: "12px", fontWeight: 700, color: "#fff", marginTop: "1px",
+                      }}>
+                        {initials(msg.author.name)}
+                      </div>
 
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-                      <p style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "#e2e8f0" }}>
-                        {msg.author.name}
-                      </p>
-                      <span style={{ fontSize: "11px", color: "#4b5a72" }}>
-                        {new Date(msg.createdAt).toLocaleTimeString(undefined, {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                      {msg.editedAt && (
-                        <span style={{ fontSize: "11px", color: "#64748b", fontStyle: "italic" }}>
-                          (edited)
-                        </span>
-                      )}
-                    </div>
-
-                    {isEditing ? (
-                      <div style={{ marginBottom: "8px" }}>
-                        <input
-                          value={editingContent}
-                          onChange={(e) => setEditingContent(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) saveEdit(msg.id);
-                            if (e.key === "Escape") setEditingId(null);
-                          }}
-                          autoFocus
-                          style={{
-                            width: "100%",
-                            maxWidth: "70%",
-                            padding: "8px 12px",
-                            fontSize: "14px",
-                            color: "#e2e8f0",
-                            background: "#161d2a",
-                            border: "1px solid #6366f1",
-                            borderRadius: "8px",
-                            outline: "none",
-                            boxSizing: "border-box",
-                            marginBottom: "6px",
-                            display: "block",
-                          }}
-                        />
-                        <div style={{ display: "flex", gap: "6px" }}>
-                          <button
-                            onClick={() => saveEdit(msg.id)}
-                            style={{
-                              padding: "6px 12px",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                              color: "#fff",
-                              background: "#6366f1",
-                              border: "none",
-                              borderRadius: "6px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            style={{
-                              padding: "6px 12px",
-                              fontSize: "12px",
-                              color: "#9ca3af",
-                              background: "transparent",
-                              border: "1px solid #252f42",
-                              borderRadius: "6px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            Cancel
-                          </button>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {/* Name + time */}
+                        <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "3px" }}>
+                          <span style={{ fontSize: "14px", fontWeight: 700, color: C.t1 }}>{msg.author.name}</span>
+                          <span style={{ fontSize: "11px", color: C.t3 }}>{formatTime(msg.createdAt)}</span>
+                          {msg.editedAt && <span style={{ fontSize: "11px", color: C.t3, fontStyle: "italic" }}>edited</span>}
                         </div>
-                      </div>
-                    ) : (
-                      <p
-                        style={{
-                          margin: 0,
-                          fontSize: "14px",
-                          color: msg.deletedAt ? "#4b5a72" : "#cbd5e1",
-                          fontStyle: msg.deletedAt ? "italic" : "normal",
-                          background: "#161d2a",
-                          border: "1px solid #1c2535",
-                          padding: "8px 12px",
-                          borderRadius: "8px",
-                          display: "inline-block",
-                          maxWidth: "70%",
-                        }}
-                      >
-                        {msg.deletedAt ? "(message deleted)" : msg.content}
-                      </p>
-                    )}
 
-                    {!msg.deletedAt && (msg.reactions ?? []).length > 0 && (
-                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
-                        {(msg.reactions ?? []).map((r) => (
-                          <button
-                            key={r.emoji}
-                            onClick={() => toggleReaction(msg.id, r.emoji)}
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "4px",
-                              padding: "4px 8px",
-                              borderRadius: "12px",
-                              border: r.userReacted ? "1px solid #6366f1" : "1px solid #252f42",
-                              background: r.userReacted ? "rgba(99,102,241,0.15)" : "transparent",
-                              color: "#cbd5e1",
-                              fontSize: "12px",
-                              cursor: "pointer",
-                            }}
-                            onMouseEnter={(e) => {
-                              (e.currentTarget as HTMLButtonElement).style.borderColor = "#6366f1";
-                              (e.currentTarget as HTMLButtonElement).style.background =
-                                "rgba(99,102,241,0.2)";
-                            }}
-                            onMouseLeave={(e) => {
-                              (e.currentTarget as HTMLButtonElement).style.borderColor = r.userReacted
-                                ? "#6366f1"
-                                : "#252f42";
-                              (e.currentTarget as HTMLButtonElement).style.background = r.userReacted
-                                ? "rgba(99,102,241,0.15)"
-                                : "transparent";
-                            }}
-                          >
-                            <span>{r.emoji}</span>
-                            <span>{r.count}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                        {/* Content or edit form */}
+                        {isEditing ? (
+                          <div>
+                            <input
+                              value={editingContent}
+                              onChange={(e) => setEditingContent(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) saveEdit(msg.id);
+                                if (e.key === "Escape") setEditingId(null);
+                              }}
+                              autoFocus
+                              style={{
+                                width: "100%", maxWidth: "600px", padding: "8px 12px",
+                                fontSize: "14px", color: C.t1,
+                                background: C.card, border: `1px solid ${C.teal}`,
+                                borderRadius: "8px", outline: "none", boxSizing: "border-box",
+                                marginBottom: "6px", display: "block",
+                                boxShadow: "0 0 0 3px rgba(66,219,188,0.1)",
+                              }}
+                            />
+                            <div style={{ display: "flex", gap: "6px" }}>
+                              <button onClick={() => saveEdit(msg.id)} style={{
+                                padding: "5px 12px", fontSize: "12px", fontWeight: 700, color: "#fff",
+                                background: C.teal, border: "none", borderRadius: "6px", cursor: "pointer",
+                              }}>Save</button>
+                              <button onClick={() => setEditingId(null)} style={{
+                                padding: "5px 12px", fontSize: "12px", color: C.t2,
+                                background: "transparent", border: `1px solid ${C.border}`,
+                                borderRadius: "6px", cursor: "pointer",
+                              }}>Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p style={{
+                            margin: 0, fontSize: "14px", lineHeight: 1.55,
+                            color: msg.deletedAt ? C.t3 : "#cbd5e1",
+                            fontStyle: msg.deletedAt ? "italic" : "normal",
+                          }}>
+                            {msg.deletedAt ? "(message deleted)" : msg.content}
+                          </p>
+                        )}
 
-                  <div
-                    data-menu
-                    style={{
-                      display: "flex",
-                      gap: "4px",
-                      opacity: 0,
-                      transition: "opacity 0.15s ease",
-                      alignItems: "flex-start",
-                      paddingTop: "2px",
-                    }}
-                  >
-                    {canEdit && (
-                      <button
-                        onClick={() => {
-                          setEditingId(msg.id);
-                          setEditingContent(msg.content || "");
-                        }}
-                        title="Edit"
-                        style={{
-                          width: "24px",
-                          height: "24px",
-                          borderRadius: "4px",
-                          border: "none",
-                          background: "rgba(99,102,241,0.1)",
-                          color: "#6366f1",
-                          fontSize: "12px",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                        onMouseEnter={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.background =
-                            "rgba(99,102,241,0.25)";
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.background =
-                            "rgba(99,102,241,0.1)";
-                        }}
-                      >
-                        ✏️
-                      </button>
-                    )}
-
-                    {canDelete && (
-                      <button
-                        onClick={() => deleteMessage(msg.id)}
-                        title="Delete"
-                        style={{
-                          width: "24px",
-                          height: "24px",
-                          borderRadius: "4px",
-                          border: "none",
-                          background: "rgba(239,68,68,0.1)",
-                          color: "#ef4444",
-                          fontSize: "12px",
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                        onMouseEnter={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.background =
-                            "rgba(239,68,68,0.25)";
-                        }}
-                        onMouseLeave={(e) => {
-                          (e.currentTarget as HTMLButtonElement).style.background =
-                            "rgba(239,68,68,0.1)";
-                        }}
-                      >
-                        🗑️
-                      </button>
-                    )}
-
-                    {!msg.deletedAt && (
-                      <div style={{ position: "relative" }}>
-                        <button
-                          onClick={() =>
-                            setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id)
-                          }
-                          title="React"
-                          style={{
-                            width: "24px",
-                            height: "24px",
-                            borderRadius: "4px",
-                            border: "none",
-                            background: "rgba(59,130,246,0.1)",
-                            color: "#3b82f6",
-                            fontSize: "12px",
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                          onMouseEnter={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.background =
-                              "rgba(59,130,246,0.25)";
-                          }}
-                          onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.background =
-                              "rgba(59,130,246,0.1)";
-                          }}
-                        >
-                          😊
-                        </button>
-
-                        {showEmojiPicker === msg.id && (
-                          <div
-                            style={{
-                              position: "absolute",
-                              bottom: "100%",
-                              right: 0,
-                              background: "#161d2a",
-                              border: "1px solid #252f42",
-                              borderRadius: "8px",
-                              padding: "8px",
-                              display: "grid",
-                              gridTemplateColumns: "repeat(3, 1fr)",
-                              gap: "4px",
-                              zIndex: 10,
-                              marginBottom: "4px",
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {EMOJI_SET.map((emoji) => (
-                              <button
-                                key={emoji}
-                                onClick={() => {
-                                  toggleReaction(msg.id, emoji);
-                                  setShowEmojiPicker(null);
-                                }}
-                                style={{
-                                  width: "28px",
-                                  height: "28px",
-                                  fontSize: "16px",
-                                  border: "none",
-                                  background: "transparent",
-                                  cursor: "pointer",
-                                  borderRadius: "4px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                }}
-                                onMouseEnter={(e) => {
-                                  (e.currentTarget as HTMLButtonElement).style.background =
-                                    "rgba(99,102,241,0.15)";
-                                }}
-                                onMouseLeave={(e) => {
-                                  (e.currentTarget as HTMLButtonElement).style.background =
-                                    "transparent";
-                                }}
-                              >
-                                {emoji}
-                              </button>
-                            ))}
+                        {/* Reactions */}
+                        {!msg.deletedAt && (msg.reactions ?? []).length > 0 && (
+                          <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "6px" }}>
+                            {(msg.reactions ?? []).map((r) => {
+                              const reacted = r.userIds?.includes(session.user?.id ?? "");
+                              return (
+                                <button
+                                  key={r.emoji}
+                                  onClick={() => toggleReaction(msg.id, r.emoji)}
+                                  style={{
+                                    display: "inline-flex", alignItems: "center", gap: "4px",
+                                    padding: "3px 8px", borderRadius: "100px", fontSize: "12px",
+                                    border: reacted ? "1px solid rgba(66,219,188,0.5)" : `1px solid ${C.border}`,
+                                    background: reacted ? "rgba(66,219,188,0.12)" : "rgba(255,255,255,0.04)",
+                                    color: reacted ? C.teal : C.t2, cursor: "pointer",
+                                    transition: "all 0.12s",
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(66,219,188,0.5)";
+                                    (e.currentTarget as HTMLButtonElement).style.background = "rgba(66,219,188,0.12)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    (e.currentTarget as HTMLButtonElement).style.borderColor = reacted ? "rgba(66,219,188,0.5)" : C.border;
+                                    (e.currentTarget as HTMLButtonElement).style.background = reacted ? "rgba(66,219,188,0.12)" : "rgba(255,255,255,0.04)";
+                                  }}
+                                >
+                                  <span>{r.emoji}</span>
+                                  <span style={{ fontWeight: 600 }}>{r.count}</span>
+                                </button>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
-                    )}
+
+                      {/* Action buttons */}
+                      <div data-menu style={{
+                        display: "flex", gap: "3px", opacity: 0, transition: "opacity 0.12s",
+                        alignItems: "center", flexShrink: 0,
+                      }}>
+                        {canEdit && (
+                          <ActionBtn title="Edit" color="rgba(66,219,188,0.8)"
+                            onClick={() => { setEditingId(msg.id); setEditingContent(msg.content || ""); }}>
+                            ✏️
+                          </ActionBtn>
+                        )}
+                        {canDelete && (
+                          <ActionBtn title="Delete" color="#ef4444" onClick={() => deleteMessage(msg.id)}>
+                            🗑️
+                          </ActionBtn>
+                        )}
+                        {!msg.deletedAt && (
+                          <div style={{ position: "relative" }}>
+                            <ActionBtn title="React" color="#94a3b8"
+                              onClick={(e) => { e.stopPropagation(); setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id); }}>
+                              😊
+                            </ActionBtn>
+                            {showEmojiPicker === msg.id && (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                style={{
+                                  position: "absolute", bottom: "calc(100% + 6px)", right: 0,
+                                  background: "#0d1827", border: `1px solid ${C.border}`,
+                                  borderRadius: "10px", padding: "8px",
+                                  display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "4px",
+                                  zIndex: 20, boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+                                }}
+                              >
+                                {EMOJI_SET.map((emoji) => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => { toggleReaction(msg.id, emoji); setShowEmojiPicker(null); }}
+                                    style={{
+                                      width: "30px", height: "30px", fontSize: "16px",
+                                      border: "none", background: "transparent", cursor: "pointer",
+                                      borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center",
+                                      transition: "background 0.1s",
+                                    }}
+                                    onMouseEnter={(e) => (e.currentTarget as HTMLButtonElement).style.background = "rgba(66,219,188,0.12)"}
+                                    onMouseLeave={(e) => (e.currentTarget as HTMLButtonElement).style.background = "transparent"}
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            );
-          })
+                );
+              })}
+            </div>
+          ))
         )}
         <div ref={messagesEndRef} />
       </div>
 
+      {/* ── Message input ── */}
       {channelType !== "VOICE" && (
-        <div
-          style={{
-            padding: "14px 20px",
-            background: "#0d1117",
-            borderTop: "1px solid #252f42",
-            display: "flex",
-            gap: "10px",
-            flexShrink: 0,
-          }}
-        >
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-            placeholder={`Message #${channelName}`}
-            style={{
-              flex: 1,
-              padding: "10px 14px",
-              borderRadius: "8px",
-              border: "1px solid #252f42",
-              background: "#161d2a",
-              color: "#e2e8f0",
-              fontSize: "14px",
-              outline: "none",
-            }}
-          />
-          <button
-            onClick={sendMessage}
-            style={{
-              padding: "10px 20px",
-              borderRadius: "8px",
-              border: "none",
-              background: "#6366f1",
-              color: "#fff",
-              fontSize: "14px",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            Send
-          </button>
+        <div style={{
+          padding: "12px 20px 14px", background: C.bg,
+          borderTop: `1px solid ${C.border}`, flexShrink: 0,
+        }}>
+          <div style={{
+            display: "flex", alignItems: "center", gap: "0",
+            background: inputFocused ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.05)",
+            border: inputFocused ? `1px solid rgba(66,219,188,0.6)` : `1px solid ${C.border}`,
+            borderRadius: "12px", overflow: "hidden",
+            transition: "border-color 0.2s, background 0.2s",
+            boxShadow: inputFocused ? "0 0 0 3px rgba(66,219,188,0.1)" : "none",
+          }}>
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && sendMessage()}
+              onFocus={() => setInputFocused(true)}
+              onBlur={()  => setInputFocused(false)}
+              placeholder={`Message #${channelName}`}
+              style={{
+                flex: 1, padding: "12px 16px", background: "transparent",
+                border: "none", color: C.t1, fontSize: "14px", outline: "none",
+              }}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!input.trim()}
+              style={{
+                margin: "6px 8px", padding: "7px 16px", borderRadius: "8px", border: "none",
+                background: input.trim() ? C.grad : "rgba(255,255,255,0.07)",
+                color: input.trim() ? "#fff" : C.t3,
+                fontSize: "13px", fontWeight: 700, cursor: input.trim() ? "pointer" : "default",
+                transition: "background 0.15s, color 0.15s",
+                letterSpacing: "0.02em", flexShrink: 0,
+              }}
+            >
+              Send
+            </button>
+          </div>
         </div>
       )}
+
+      <style>{`
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+        input::placeholder { color: #334155; }
+      `}</style>
     </main>
+  );
+}
+
+function ActionBtn({
+  title, color, onClick, children,
+}: {
+  title: string; color: string; onClick: (e: React.MouseEvent) => void; children: React.ReactNode;
+}) {
+  return (
+    <button
+      title={title} onClick={onClick}
+      style={{
+        width: "26px", height: "26px", borderRadius: "6px", border: "none",
+        background: "rgba(255,255,255,0.06)", color, fontSize: "12px",
+        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+        transition: "background 0.12s",
+      }}
+      onMouseEnter={(e) => (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.12)"}
+      onMouseLeave={(e) => (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)"}
+    >
+      {children}
+    </button>
   );
 }
