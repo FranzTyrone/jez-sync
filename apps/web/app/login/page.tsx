@@ -5,85 +5,112 @@ import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 
-type Star = {
-  x: number;
-  y: number;
-  radius: number;
-  baseOpacity: number;
-  twinkleSpeed: number;
-  twinklePhase: number;
-};
+const CELL = 40;
+type Ripple = { cx: number; cy: number; t: number; speed: number; maxR: number };
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [emailFocused, setEmailFocused] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [focused, setFocused] = useState<string | null>(null);
   const router = useRouter();
-
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const starsRef = useRef<Star[]>([]);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const panel = panelRef.current;
+    if (!canvas || !panel) return;
     const ctx = canvas.getContext("2d")!;
+    let cols = 0, rows = 0;
+    let brightness: Float32Array;
+    let decay: Float32Array;
+    let ripples: Ripple[] = [];
+    let raf: number;
+    let frame = 0;
 
-    function resize() {
-      const parent = canvas!.parentElement!;
-      canvas!.width = parent.clientWidth;
-      canvas!.height = parent.clientHeight;
-
-      starsRef.current = Array.from({ length: 110 }, () => ({
-        x: Math.random() * canvas!.width,
-        y: Math.random() * canvas!.height,
-        radius: Math.random() * 1.4 + 0.3,
-        baseOpacity: Math.random() * 0.5 + 0.2,
-        twinkleSpeed: Math.random() * 0.02 + 0.005,
-        twinklePhase: Math.random() * Math.PI * 2,
-      }));
+    function init() {
+      const w = panel!.clientWidth;
+      const h = panel!.clientHeight;
+      canvas!.width = w;
+      canvas!.height = h;
+      cols = Math.ceil(w / CELL) + 2;
+      rows = Math.ceil(h / CELL) + 2;
+      const n = cols * rows;
+      brightness = new Float32Array(n);
+      decay = new Float32Array(n).map(() => 0.014 + Math.random() * 0.012);
     }
-    resize();
-    window.addEventListener("resize", resize);
 
-    let animationFrame: number;
-    let t = 0;
+    function spawn() {
+      ripples.push({
+        cx: Math.floor(Math.random() * cols),
+        cy: Math.floor(Math.random() * rows),
+        t: 0,
+        speed: 0.16 + Math.random() * 0.12,
+        maxR: 7 + Math.random() * 11,
+      });
+    }
 
     function draw() {
-      t += 1;
+      frame++;
       ctx.clearRect(0, 0, canvas!.width, canvas!.height);
+      if (frame % 42 === 0) spawn();
+      if (frame % 90 === 0) spawn();
 
-      for (const star of starsRef.current) {
-        const twinkle = Math.sin(t * star.twinkleSpeed + star.twinklePhase) * 0.4 + 0.6;
-        ctx.beginPath();
-        ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${star.baseOpacity * twinkle})`;
-        ctx.fill();
+      ripples = ripples.filter((r) => r.t * r.speed < r.maxR + 4);
+      for (const r of ripples) {
+        r.t++;
+        const radius = r.t * r.speed;
+        const minC = Math.max(0, Math.floor(r.cx - radius - 2));
+        const maxC = Math.min(cols - 1, Math.ceil(r.cx + radius + 2));
+        const minR2 = Math.max(0, Math.floor(r.cy - radius - 2));
+        const maxR2 = Math.min(rows - 1, Math.ceil(r.cy + radius + 2));
+        for (let row = minR2; row <= maxR2; row++) {
+          for (let col = minC; col <= maxC; col++) {
+            const dist = Math.sqrt((col - r.cx) ** 2 + (row - r.cy) ** 2);
+            const wave = Math.exp(-((dist - radius) ** 2) * 1.8);
+            if (wave > 0.04) {
+              const idx = row * cols + col;
+              brightness[idx] = Math.min(1, brightness[idx] + wave * 0.85);
+            }
+          }
+        }
       }
 
-      animationFrame = requestAnimationFrame(draw);
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const idx = row * cols + col;
+          const b = brightness[idx];
+          const x = col * CELL;
+          const y = row * CELL;
+          if (b > 0.004) {
+            ctx.fillStyle = `rgba(66,219,188,${b * 0.14})`;
+            ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+          }
+          ctx.strokeStyle = `rgba(66,219,188,${0.045 + b * 0.5})`;
+          ctx.lineWidth = 0.5;
+          ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+          brightness[idx] = Math.max(0, b - decay[idx]);
+        }
+      }
+      raf = requestAnimationFrame(draw);
     }
-    draw();
 
-    return () => {
-      window.removeEventListener("resize", resize);
-      cancelAnimationFrame(animationFrame);
-    };
+    const ro = new ResizeObserver(init);
+    ro.observe(panel);
+    init();
+    for (let i = 0; i < 5; i++) spawn();
+    draw();
+    return () => { ro.disconnect(); cancelAnimationFrame(raf); };
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
-
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
-
+    const result = await signIn("credentials", { email, password, redirect: false });
     if (result?.error) {
       setError("Invalid email or password");
       setLoading(false);
@@ -92,324 +119,329 @@ export default function LoginPage() {
     }
   }
 
-  const inputStyle = (focused: boolean): React.CSSProperties => ({
+  const inputStyle = (name: string): React.CSSProperties => ({
     width: "100%",
-    padding: "12px 14px",
+    padding: "12px 16px",
+    backgroundColor: focused === name ? "#f8fffe" : "#f9fafb",
+    border: focused === name ? "1.5px solid #42DBBC" : "1.5px solid #e5e7eb",
     borderRadius: "10px",
-    border: focused ? "1.5px solid #1a9e8f" : "1.5px solid #e5e7eb",
     fontSize: "14px",
+    color: "#111827",
     outline: "none",
     boxSizing: "border-box",
-    transition: "border-color 0.15s ease, box-shadow 0.15s ease",
-    boxShadow: focused ? "0 0 0 4px rgba(26,158,143,0.12)" : "none",
+    transition: "border-color 0.18s, background-color 0.18s, box-shadow 0.18s",
+    boxShadow: focused === name ? "0 0 0 4px rgba(66,219,188,0.15)" : "none",
   });
 
+  const features = [
+    { icon: "💬", label: "Real-time Chat", desc: "Channels, threads & direct messages" },
+    { icon: "🎙️", label: "Voice & Video", desc: "Crystal-clear calls with your team" },
+    { icon: "📋", label: "Project Boards", desc: "Kanban boards & task management" },
+  ];
+
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        fontFamily: "'Segoe UI', sans-serif",
-      }}
-    >
+    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
+
+      {/* ── Left branding panel ── */}
+      <div
+        ref={panelRef}
+        style={{
+          flex: "0 0 48%",
+          position: "relative",
+          background: "linear-gradient(160deg, #040d1a 0%, #0a1f3c 55%, #061628 100%)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "3rem 3.5rem",
+          overflow: "hidden",
+        }}
+        className="branding-panel"
+      >
+        {/* Grid canvas */}
+        <canvas
+          ref={canvasRef}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
+        />
+
+        {/* Bottom-edge glow */}
+        <div style={{
+          position: "absolute", bottom: 0, left: 0, right: 0, height: "220px",
+          background: "linear-gradient(to top, rgba(66,219,188,0.08), transparent)",
+          pointerEvents: "none",
+        }} />
+
+        {/* Content */}
+        <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: "380px" }}>
+          {/* Headline */}
+          <h2 style={{
+            fontSize: "32px",
+            fontWeight: 800,
+            color: "#ffffff",
+            margin: "0 0 14px",
+            lineHeight: 1.2,
+            letterSpacing: "-0.03em",
+          }}>
+            Everything your<br />
+            <span style={{
+              background: "linear-gradient(90deg, #42DBBC, #7dd3fc)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}>team needs</span>, in one place.
+          </h2>
+          <p style={{ fontSize: "14px", color: "#94a3b8", margin: "0 0 40px", lineHeight: 1.6 }}>
+            Voice, video, chat, and project management — built for teams that move fast.
+          </p>
+
+          {/* Feature list */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {features.map((f) => (
+              <div key={f.label} style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                <div style={{
+                  width: "40px", height: "40px", borderRadius: "10px", flexShrink: 0,
+                  background: "rgba(66,219,188,0.1)",
+                  border: "1px solid rgba(66,219,188,0.2)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "18px",
+                }}>
+                  {f.icon}
+                </div>
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#e2e8f0", marginBottom: "2px" }}>{f.label}</div>
+                  <div style={{ fontSize: "12px", color: "#64748b" }}>{f.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bottom badge */}
+          <div style={{
+            marginTop: "48px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            background: "rgba(66,219,188,0.08)",
+            border: "1px solid rgba(66,219,188,0.18)",
+            borderRadius: "100px",
+            padding: "6px 14px",
+          }}>
+            <div style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "#42DBBC", animation: "pulse 2s ease-in-out infinite" }} />
+            <span style={{ fontSize: "11px", color: "#42DBBC", fontWeight: 600, letterSpacing: "0.05em" }}>ALL SYSTEMS OPERATIONAL</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Right form panel ── */}
       <div
         style={{
           flex: 1,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: "2rem",
-          animation: "fadeSlideIn 0.6s ease",
+          backgroundColor: "#ffffff",
+          padding: "3rem 2rem",
+          position: "relative",
         }}
       >
-        <div style={{ width: "100%", maxWidth: "360px" }}>
-          <div
-            style={{
-              width: "44px",
-              height: "4px",
-              borderRadius: "2px",
-              background: "linear-gradient(135deg, #1d4f8f 0%, #1a9e8f 100%)",
-              marginBottom: "20px",
-            }}
-          />
-          <h1
-            style={{
-              fontSize: "28px",
-              fontWeight: 700,
-              color: "#0d1f3c",
-              margin: "0 0 6px",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Welcome back
-          </h1>
-          <p
-            style={{
-              fontSize: "14px",
-              color: "#6b7280",
-              margin: "0 0 32px",
-            }}
-          >
-            Sign in to your workspace to continue
-          </p>
+        {/* Subtle top-right tint */}
+        <div style={{
+          position: "absolute", top: 0, right: 0, width: "300px", height: "300px",
+          background: "radial-gradient(circle, rgba(66,219,188,0.06) 0%, transparent 70%)",
+          pointerEvents: "none",
+        }} />
 
-          <form onSubmit={handleSubmit}>
-            <div style={{ marginBottom: "16px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#374151",
-                  marginBottom: "6px",
-                }}
-              >
-                Email
+        <div style={{ width: "100%", maxWidth: "380px", position: "relative" }}>
+
+          {/* Header */}
+          <div style={{ marginBottom: "36px" }}>
+            <div style={{ marginBottom: "20px", display: "flex", justifyContent: "center" }}>
+              <Image
+                src="/jezsync-logo.png"
+                alt="Jez Sync"
+                width={220}
+                height={124}
+                style={{ objectFit: "contain" }}
+                priority
+              />
+            </div>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+            <div>
+              <label style={{
+                display: "block", fontSize: "12px", fontWeight: 600,
+                color: "#374151", marginBottom: "7px",
+              }}>
+                Email address
               </label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onFocus={() => setEmailFocused(true)}
-                onBlur={() => setEmailFocused(false)}
+                onFocus={() => setFocused("email")}
+                onBlur={() => setFocused(null)}
                 required
                 placeholder="you@example.com"
-                style={inputStyle(emailFocused)}
+                style={inputStyle("email")}
               />
             </div>
 
-            <div style={{ marginBottom: "10px" }}>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  color: "#374151",
-                  marginBottom: "6px",
-                }}
-              >
+            <div>
+              <label style={{
+                display: "block", fontSize: "12px", fontWeight: 600,
+                color: "#374151", marginBottom: "7px",
+              }}>
                 Password
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onFocus={() => setPasswordFocused(true)}
-                onBlur={() => setPasswordFocused(false)}
-                required
-                placeholder="********"
-                style={inputStyle(passwordFocused)}
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onFocus={() => setFocused("password")}
+                  onBlur={() => setFocused(null)}
+                  required
+                  placeholder="••••••••"
+                  style={{ ...inputStyle("password"), paddingRight: "46px" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  tabIndex={-1}
+                  style={{
+                    position: "absolute", right: "14px", top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer",
+                    padding: "2px", color: "#9ca3af", display: "flex", alignItems: "center",
+                  }}
+                >
+                  {showPassword ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                      <line x1="1" y1="1" x2="23" y2="23"/>
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                      <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
 
             {error && (
-              <p
-                style={{
-                  background: "#fef2f2",
-                  color: "#dc2626",
-                  fontSize: "13px",
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  marginTop: "14px",
-                  marginBottom: "0",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
+              <div style={{
+                display: "flex", alignItems: "center", gap: "9px",
+                backgroundColor: "#fef2f2", border: "1px solid #fecaca",
+                color: "#dc2626", fontSize: "13px",
+                padding: "11px 14px", borderRadius: "10px",
+              }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="12"/>
+                  <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
                 {error}
-              </p>
+              </div>
             )}
 
             <button
               type="submit"
               disabled={loading}
               style={{
-                width: "100%",
-                padding: "13px",
-                borderRadius: "10px",
-                border: "none",
-                background: "linear-gradient(135deg, #1d4f8f 0%, #1a9e8f 100%)",
-                color: "#fff",
-                fontSize: "14px",
-                fontWeight: 600,
+                width: "100%", padding: "13px",
+                borderRadius: "10px", border: "none",
+                background: loading ? "#a5d8d0" : "linear-gradient(135deg, #42DBBC 0%, #21579A 100%)",
+                color: "#fff", fontSize: "14px", fontWeight: 700,
                 cursor: loading ? "not-allowed" : "pointer",
-                opacity: loading ? 0.7 : 1,
-                marginTop: "24px",
-                boxShadow: "0 4px 14px rgba(26,158,143,0.3)",
-                transition: "transform 0.1s ease, box-shadow 0.15s ease",
+                marginTop: "4px",
+                boxShadow: loading ? "none" : "0 4px 20px rgba(66,219,188,0.35)",
+                transition: "transform 0.12s ease, box-shadow 0.15s ease",
+                letterSpacing: "0.02em",
+              }}
+              onMouseEnter={(e) => {
+                if (!loading) {
+                  (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-1px)";
+                  (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 8px 28px rgba(66,219,188,0.45)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
+                (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 4px 20px rgba(66,219,188,0.35)";
               }}
             >
-              {loading ? "Signing in..." : "Sign in"}
+              {loading ? "Signing in…" : "Sign in →"}
             </button>
           </form>
 
-          <p
+          {/* Divider */}
+          <div style={{ display: "flex", alignItems: "center", gap: "14px", margin: "28px 0" }}>
+            <div style={{ flex: 1, height: "1px", backgroundColor: "#f1f5f9" }} />
+            <span style={{ fontSize: "12px", color: "#cbd5e1", whiteSpace: "nowrap" }}>Don't have an account?</span>
+            <div style={{ flex: 1, height: "1px", backgroundColor: "#f1f5f9" }} />
+          </div>
+
+          <a
+            href="/register"
             style={{
-              fontSize: "13px",
-              color: "#6b7280",
-              marginTop: "28px",
-              textAlign: "center",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+              padding: "12px", borderRadius: "10px",
+              border: "1.5px solid #e5e7eb",
+              color: "#374151", fontSize: "14px", fontWeight: 600,
+              textDecoration: "none",
+              transition: "border-color 0.18s, color 0.18s, background-color 0.18s",
+              backgroundColor: "transparent",
+            }}
+            onMouseEnter={(e) => {
+              const el = e.currentTarget;
+              el.style.borderColor = "#42DBBC";
+              el.style.color = "#21579A";
+              el.style.backgroundColor = "#f0fdfb";
+            }}
+            onMouseLeave={(e) => {
+              const el = e.currentTarget;
+              el.style.borderColor = "#e5e7eb";
+              el.style.color = "#374151";
+              el.style.backgroundColor = "transparent";
             }}
           >
-            No account?{" "}
-            <a href="/register" style={{ color: "#1a9e8f", fontWeight: 600, textDecoration: "none" }}>
-              Create one
-            </a>
+            Create a free account
+          </a>
+
+          <p style={{ fontSize: "11px", color: "#cbd5e1", textAlign: "center", marginTop: "24px", lineHeight: 1.6 }}>
+            By signing in, you agree to our{" "}
+            <span style={{ color: "#94a3b8", cursor: "pointer" }}>Terms</span>
+            {" "}and{" "}
+            <span style={{ color: "#94a3b8", cursor: "pointer" }}>Privacy Policy</span>.
           </p>
         </div>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          position: "relative",
-          background: "linear-gradient(135deg, #0d1f3c 0%, #163a5e 50%, #0f4d4a 100%)",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "2rem",
-          overflow: "hidden",
-        }}
-      >
-        <canvas
-          ref={canvasRef}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            pointerEvents: "none",
-          }}
-        />
-
-        <div
-          style={{
-            position: "absolute",
-            top: "-80px",
-            left: "-80px",
-            width: "300px",
-            height: "300px",
-            borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(45,212,191,0.2) 0%, transparent 70%)",
-            animation: "float1 8s ease-in-out infinite",
-            pointerEvents: "none",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            bottom: "-100px",
-            right: "-60px",
-            width: "360px",
-            height: "360px",
-            borderRadius: "50%",
-            background: "radial-gradient(circle, rgba(29,79,143,0.3) 0%, transparent 70%)",
-            animation: "float2 10s ease-in-out infinite",
-            pointerEvents: "none",
-          }}
-        />
-
-        <div
-          style={{
-            position: "relative",
-            zIndex: 1,
-            textAlign: "center",
-            animation: "fadeUp 0.8s ease",
-          }}
-        >
-          <div
-            style={{
-              position: "relative",
-              display: "inline-block",
-              marginBottom: "24px",
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                top: "50%",
-                left: "50%",
-                transform: "translate(-50%, -50%)",
-                width: "380px",
-                height: "260px",
-                background: "radial-gradient(ellipse, rgba(255,255,255,0.18) 0%, transparent 65%)",
-                pointerEvents: "none",
-              }}
-            />
-            <Image
-              src="/jezsync-logo.png"
-              alt="Jez Sync"
-              width={340}
-              height={191}
-              style={{
-                objectFit: "contain",
-                position: "relative",
-                filter:
-                  "drop-shadow(0 4px 24px rgba(0,0,0,0.5)) brightness(1.15) contrast(1.05)",
-              }}
-              priority
-            />
-          </div>
-          <p
-            style={{
-              color: "#e2e8f0",
-              fontSize: "16px",
-              maxWidth: "320px",
-              margin: "0 auto",
-              lineHeight: "1.6",
-            }}
-          >
-            Voice, video, and project management - all in one place.
-          </p>
-
-          <div
-            style={{
-              display: "flex",
-              gap: "8px",
-              justifyContent: "center",
-              marginTop: "28px",
-            }}
-          >
-            {["Chat", "Voice", "Boards"].map((tag) => (
-              <span
-                key={tag}
-                style={{
-                  fontSize: "12px",
-                  color: "#cbd5e1",
-                  background: "rgba(255,255,255,0.08)",
-                  border: "1px solid rgba(255,255,255,0.15)",
-                  borderRadius: "20px",
-                  padding: "5px 14px",
-                }}
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <style>{`
-          @keyframes float1 {
-            0%, 100% { transform: translate(0, 0); }
-            50% { transform: translate(30px, 40px); }
-          }
-          @keyframes float2 {
-            0%, 100% { transform: translate(0, 0); }
-            50% { transform: translate(-40px, -30px); }
-          }
-          @keyframes fadeSlideIn {
-            from { opacity: 0; transform: translateX(-12px); }
-            to { opacity: 1; transform: translateX(0); }
-          }
-          @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(16px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-        `}</style>
-      </div>
-    </main>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.5; transform: scale(0.85); }
+        }
+        @keyframes cardIn {
+          from { opacity: 0; transform: translateX(16px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        .branding-panel { animation: fadeIn 0.6s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        input::placeholder { color: #d1d5db; }
+        input:-webkit-autofill,
+        input:-webkit-autofill:focus {
+          -webkit-box-shadow: 0 0 0 1000px #f9fafb inset !important;
+          -webkit-text-fill-color: #111827 !important;
+          caret-color: #111827;
+        }
+        @media (max-width: 768px) {
+          .branding-panel { display: none !important; }
+        }
+      `}</style>
+    </div>
   );
 }
