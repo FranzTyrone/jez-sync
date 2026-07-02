@@ -4,7 +4,9 @@ import { getApiUrl } from '@/lib/config';
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { socket } from "@/lib/socket";
+import { getSocket } from "@/lib/socket";
+
+const socket = getSocket();
 
 const CHANNEL_ID = "1122d9d0-7170-455e-899c-c768cb556cf2";
 

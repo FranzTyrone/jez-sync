@@ -13,12 +13,13 @@ export default function Home() {
 
   useEffect(() => {
     if (status === "loading") return;
-    if (!session) { router.push("/login"); return; }
+    if (!session?.user?.id) { router.push("/login"); return; }
     fetch(`${getApiUrl()}/users/${session.user.id}/servers`, { credentials: "include" })
       .then((r) => r.json())
       .then((servers: Server[]) => {
-        if (servers.length > 0 && servers[0].channels.length > 0) {
-          router.push(`/servers/${servers[0].id}/channels/${servers[0].channels[0].id}`);
+        const first = servers[0];
+        if (first && first.channels.length > 0) {
+          router.push(`/servers/${first.id}/channels/${first.channels[0]!.id}`);
         } else {
           router.push("/create-server");
         }

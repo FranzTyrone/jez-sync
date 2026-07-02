@@ -64,9 +64,9 @@ export default function AnnotationCanvas({
 
     if (s.tool === "pen" && s.points && s.points.length > 1) {
       ctx.beginPath();
-      ctx.moveTo(s.points[0].x * w, s.points[0].y * h);
+      ctx.moveTo(s.points[0]!.x * w, s.points[0]!.y * h);
       for (let i = 1; i < s.points.length; i++) {
-        ctx.lineTo(s.points[i].x * w, s.points[i].y * h);
+        ctx.lineTo(s.points[i]!.x * w, s.points[i]!.y * h);
       }
       ctx.stroke();
     }
@@ -196,7 +196,7 @@ export default function AnnotationCanvas({
         points: currentPointsRef.current,
       };
     } else if (tool === "arrow" && startPointRef.current) {
-      const last = currentPointsRef.current[currentPointsRef.current.length - 1];
+      const last = currentPointsRef.current[currentPointsRef.current.length - 1] ?? startPointRef.current;
       stroke = {
         channelId,
         strokeId: crypto.randomUUID(),
@@ -209,7 +209,7 @@ export default function AnnotationCanvas({
         y2: last.y,
       };
     } else if (tool === "circle" && startPointRef.current) {
-      const last = currentPointsRef.current[currentPointsRef.current.length - 1];
+      const last = currentPointsRef.current[currentPointsRef.current.length - 1] ?? startPointRef.current;
       const dx = last.x - startPointRef.current.x;
       const dy = last.y - startPointRef.current.y;
       const r = Math.sqrt(dx * dx + dy * dy);

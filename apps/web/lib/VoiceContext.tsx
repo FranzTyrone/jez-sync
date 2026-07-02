@@ -12,6 +12,7 @@ export type VoiceActions = {
   toggleDeafen: () => void;
   toggleShare: () => void;
   leaveVoice: () => void;
+  joinVoice: () => void;
 };
 
 export type VoicePrefs = {

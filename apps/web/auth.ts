@@ -36,17 +36,23 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           id: user.id,
           email: user.email,
           name: user.name,
+          image: user.image ?? null,
         };
       },
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
-      if (user) token.id = user.id;
+    jwt({ token, user, trigger, session: sessionUpdate }) {
+      if (user) { token.id = user.id; token.image = (user as any).image ?? null; }
+      if (trigger === "update" && sessionUpdate?.image !== undefined) token.image = sessionUpdate.image;
+      if (trigger === "update" && sessionUpdate?.name !== undefined) token.name = sessionUpdate.name;
       return token;
     },
     session({ session, token }) {
-      if (session.user) session.user.id = token.id as string;
+      if (session.user) {
+        session.user.id = token.id as string;
+        (session.user as any).image = token.image as string | null;
+      }
       return session;
     },
   },

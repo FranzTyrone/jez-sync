@@ -2,7 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import * as mediasoupClient from "mediasoup-client";
-import { socket } from "@/lib/socket";
+import { getSocket } from "@/lib/socket";
+
+const socket = getSocket();
 
 const TEST_CHANNEL_ID = "voice-test-channel-1";
 

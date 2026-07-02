@@ -4,6 +4,7 @@ import { getApiUrl } from '@/lib/config';
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
+import { useTheme, themeColors } from "@/lib/ThemeContext";
 
 type BoardSummary = {
   id: string; name: string; createdAt: string; createdById: string;
@@ -12,28 +13,19 @@ type BoardSummary = {
   canAccess: boolean; isLocked: boolean; hasPendingRequest: boolean;
 };
 
-const C = {
-  bg:     "#0d1524",
-  card:   "#111d2e",
-  border: "rgba(255,255,255,0.07)",
-  t1:     "#f1f5f9", t2: "#94a3b8", t3: "#475569",
-  teal:   "#42DBBC", blue: "#21579A",
-  grad:   "linear-gradient(135deg, #42DBBC 0%, #21579A 100%)",
-  green:  "#10b981", red: "#ef4444",
-};
-
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 // ─── Pending access requests (owner-only panel) ──────────────
 function PendingRequestsSection({
-  boards, session, ownerId, getPendingRequests, onApprove, onDeny,
+  boards, session, ownerId, getPendingRequests, onApprove, onDeny, C,
 }: {
   boards: BoardSummary[]; session: any; ownerId: string;
   getPendingRequests: (boardId: string) => Promise<any[]>;
   onApprove: (boardId: string, requestId: string, userName?: string) => Promise<void>;
   onDeny:    (boardId: string, requestId: string, userName?: string) => Promise<void>;
+  C: ReturnType<typeof themeColors>;
 }) {
   const [requestsByBoard, setRequestsByBoard] = useState<Record<string, any[]>>({});
 
@@ -85,7 +77,7 @@ function PendingRequestsSection({
               {reqs.map((req: any) => (
                 <div key={req.id} style={{
                   display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "10px 12px", background: "rgba(255,255,255,0.03)",
+                  padding: "10px 12px", background: C.hover,
                   borderRadius: "8px", border: `1px solid ${C.border}`,
                 }}>
                   <span style={{ color: C.t2, fontSize: "13px" }}>{req.userName}</span>
@@ -94,15 +86,15 @@ function PendingRequestsSection({
                       padding: "5px 12px", fontSize: "12px", fontWeight: 700, color: "#fff",
                       background: C.green, border: "none", borderRadius: "6px", cursor: "pointer",
                     }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#059669")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = C.green)}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                     >Approve</button>
                     <button onClick={() => onDeny(board.id, req.id, req.userName)} style={{
                       padding: "5px 12px", fontSize: "12px", fontWeight: 700, color: "#fff",
                       background: C.red, border: "none", borderRadius: "6px", cursor: "pointer",
                     }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#dc2626")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = C.red)}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.85")}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
                     >Deny</button>
                   </div>
                 </div>
@@ -123,7 +115,7 @@ const BOARD_COLORS = [
 
 function boardColor(id: string) {
   const hash = id.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  return BOARD_COLORS[hash % BOARD_COLORS.length];
+  return BOARD_COLORS[hash % BOARD_COLORS.length]!;
 }
 
 // ─── Main page ───────────────────────────────────────────────
@@ -132,6 +124,8 @@ export default function BoardsPage() {
   const params   = useParams();
   const router   = useRouter();
   const serverId = params.serverId as string;
+  const { dark } = useTheme();
+  const C = themeColors(dark);
 
   const [boards,      setBoards]      = useState<BoardSummary[]>([]);
   const [ownerId,     setOwnerId]     = useState("");
@@ -214,7 +208,7 @@ export default function BoardsPage() {
 
   if (!session) {
     return (
-      <main style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <main style={{ minHeight: "100vh", background: C.main, display: "flex", alignItems: "center", justifyContent: "center", transition: "background 0.2s ease" }}>
         <p style={{ color: C.t3 }}>
           Please <a href="/login" style={{ color: C.teal, fontWeight: 600, textDecoration: "none" }}>log in</a> to continue.
         </p>
@@ -224,8 +218,9 @@ export default function BoardsPage() {
 
   return (
     <main style={{
-      minHeight: "100vh", background: C.bg, padding: "28px 28px 48px",
+      minHeight: "100vh", background: C.main, padding: "28px 28px 48px",
       fontFamily: "'Segoe UI', system-ui, sans-serif",
+      transition: "background 0.2s ease, color 0.2s ease",
     }}>
       {/* Toast */}
       {toast && (
@@ -279,7 +274,7 @@ export default function BoardsPage() {
         <div style={{
           background: C.card, border: `1px solid rgba(66,219,188,0.25)`,
           borderRadius: "14px", padding: "20px", marginBottom: "28px",
-          maxWidth: "400px", boxShadow: "0 0 0 1px rgba(66,219,188,0.08) inset",
+          maxWidth: "400px", boxShadow: dark ? "0 0 0 1px rgba(66,219,188,0.08) inset" : "0 2px 8px rgba(0,0,0,0.06)",
         }}>
           <p style={{ margin: "0 0 14px", fontSize: "11px", fontWeight: 700, color: C.t3, textTransform: "uppercase", letterSpacing: "0.07em" }}>
             New board
@@ -294,7 +289,7 @@ export default function BoardsPage() {
             autoFocus
             style={{
               width: "100%", padding: "10px 12px", fontSize: "14px", color: C.t1,
-              background: nameFocused ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
+              background: nameFocused ? C.inputBg : C.cardAlt,
               border: nameFocused ? `1px solid rgba(66,219,188,0.6)` : `1px solid ${C.border}`,
               borderRadius: "8px", outline: "none", boxSizing: "border-box", marginBottom: "14px",
               boxShadow: nameFocused ? "0 0 0 3px rgba(66,219,188,0.1)" : "none",
@@ -313,7 +308,7 @@ export default function BoardsPage() {
                   style={{
                     padding: "7px 16px", borderRadius: "8px", fontSize: "13px", fontWeight: 600,
                     border: boardType === type ? "1px solid rgba(66,219,188,0.5)" : `1px solid ${C.border}`,
-                    background: boardType === type ? "rgba(66,219,188,0.12)" : "rgba(255,255,255,0.04)",
+                    background: boardType === type ? "rgba(66,219,188,0.12)" : C.cardAlt,
                     color: boardType === type ? C.teal : C.t2, cursor: "pointer",
                     transition: "all 0.15s",
                   }}
@@ -360,6 +355,7 @@ export default function BoardsPage() {
         getPendingRequests={getPendingRequests}
         onApprove={approveRequest}
         onDeny={denyRequest}
+        C={C}
       />
 
       {/* Board grid */}
@@ -406,7 +402,7 @@ export default function BoardsPage() {
                   if (!board.isLocked) {
                     const el = e.currentTarget as HTMLDivElement;
                     el.style.borderColor = "rgba(66,219,188,0.4)";
-                    el.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)";
+                    el.style.boxShadow = dark ? "0 8px 24px rgba(0,0,0,0.3)" : "0 8px 24px rgba(0,0,0,0.1)";
                     el.style.transform = "translateY(-2px)";
                   }
                 }}
@@ -430,16 +426,16 @@ export default function BoardsPage() {
                       <>
                         <button onClick={(e) => toggleVisibility(board.id, board.visibility, e)}
                           title={board.visibility === "PUBLIC" ? "Make private" : "Make public"}
-                          style={iconBtnStyle}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.12)")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
+                          style={iconBtnStyle(dark)}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)")}
                         >
                           {board.visibility === "PUBLIC" ? "🌐" : "🔒"}
                         </button>
                         <button onClick={(e) => deleteBoard(board.id, e)} title="Delete board"
-                          style={iconBtnStyle}
+                          style={iconBtnStyle(dark)}
                           onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(239,68,68,0.2)")}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)")}
                         >✕</button>
                       </>
                     )}
@@ -469,7 +465,7 @@ export default function BoardsPage() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{
                       padding: "2px 9px", borderRadius: "100px", fontSize: "10px", fontWeight: 700,
-                      background: "rgba(255,255,255,0.06)", color: C.t3, letterSpacing: "0.04em",
+                      background: C.hover, color: C.t3, letterSpacing: "0.04em",
                     }}>
                       {board._count.tasks} task{board._count.tasks !== 1 ? "s" : ""}
                     </span>
@@ -483,7 +479,7 @@ export default function BoardsPage() {
                         <div style={{
                           width: "100%", padding: "7px", textAlign: "center",
                           fontSize: "12px", fontWeight: 600, color: C.t3,
-                          background: "rgba(255,255,255,0.04)", borderRadius: "7px",
+                          background: C.hover, borderRadius: "7px",
                           border: `1px solid ${C.border}`,
                         }}>Pending approval…</div>
                       ) : (
@@ -503,16 +499,19 @@ export default function BoardsPage() {
 
       <style>{`
         @keyframes slideIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
-        input::placeholder { color: #2d3f55; }
+        input::placeholder { color: ${C.t3}; }
       `}</style>
     </main>
   );
 }
 
-const iconBtnStyle: React.CSSProperties = {
-  width: "24px", height: "24px", borderRadius: "6px", border: "none",
-  background: "rgba(255,255,255,0.06)", fontSize: "11px",
-  color: "#94a3b8", cursor: "pointer",
-  display: "flex", alignItems: "center", justifyContent: "center",
-  transition: "background 0.12s",
-};
+function iconBtnStyle(dark: boolean): React.CSSProperties {
+  return {
+    width: "24px", height: "24px", borderRadius: "6px", border: "none",
+    background: dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)",
+    fontSize: "11px",
+    color: dark ? "#94a3b8" : "#64748b", cursor: "pointer",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    transition: "background 0.12s",
+  };
+}

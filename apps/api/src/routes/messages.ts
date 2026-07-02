@@ -9,7 +9,7 @@ export async function messageRoutes(app: FastifyInstance) {
     const messages = await prisma.message.findMany({
       where: { channelId },
       include: {
-        author: { select: { id: true, name: true } },
+        author: { select: { id: true, name: true, image: true } },
         reactions: true,
       },
       orderBy: { createdAt: "asc" },

@@ -14,6 +14,7 @@ model User {
   email               String              @unique
   name                String
   passwordHash        String
+  image               String?
   emailVerified       Boolean             @default(false)
   createdAt           DateTime            @default(now())
   servers             ServerMember[]

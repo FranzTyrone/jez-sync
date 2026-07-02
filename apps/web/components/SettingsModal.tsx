@@ -4,6 +4,7 @@ import { getApiUrl } from "@/lib/config";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useSettings } from "@/lib/useSettings";
+import { useProfileImage } from "@/lib/ProfileImageContext";
 
 // ─── Design tokens ───────────────────────────────────────────
 const C = {
@@ -38,74 +39,235 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "shortcuts",     label: "Keyboard Shortcuts", icon: "⌨️" },
 ];
 
+// ─── Recent avatars helpers ───────────────────────────────────
+const RECENT_KEY = (userId: string) => `avatar_history_${userId}`;
+const MAX_RECENT = 5;
+
+function loadRecentAvatars(userId: string): string[] {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY(userId)) ?? "[]"); }
+  catch { return []; }
+}
+
+function pushRecentAvatar(userId: string, url: string) {
+  const prev = loadRecentAvatars(userId).filter((u) => u !== url);
+  const next = [url, ...prev].slice(0, MAX_RECENT);
+  localStorage.setItem(RECENT_KEY(userId), JSON.stringify(next));
+}
+
 // ─── Account tab ─────────────────────────────────────────────
 function AccountTab() {
   const { data: session, update: updateSession } = useSession();
+  const { setLiveImage } = useProfileImage();
+  const currentImage = (session?.user as any)?.image as string | null;
+
   const [name, setName] = useState(session?.user?.name ?? "");
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [pendingRecentUrl, setPendingRecentUrl] = useState<string | null>(null); // recent image picked but not saved
+  const [committedImage, setCommittedImage] = useState<string | null>(null);
+  const [recentAvatars, setRecentAvatars] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  const [avatarError, setAvatarError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function saveName() {
-    if (!name.trim() || name.trim() === session?.user?.name) return;
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const stored = loadRecentAvatars(session.user.id);
+    // Seed with current image if not already tracked
+    if (currentImage && !stored.includes(currentImage)) {
+      const seeded = [currentImage, ...stored].slice(0, MAX_RECENT);
+      localStorage.setItem(RECENT_KEY(session.user.id), JSON.stringify(seeded));
+      setRecentAvatars(seeded);
+    } else {
+      setRecentAvatars(stored);
+    }
+  }, [session?.user?.id, currentImage]);
+
+  // previewUrl: local blob (new file); pendingRecentUrl: already-uploaded recent pick
+  // committedImage: server URL just saved, shown while session propagates
+  const displayImage = previewUrl ?? pendingRecentUrl ?? committedImage ?? currentImage;
+  const hasPendingImage = pendingFile !== null || pendingRecentUrl !== null;
+  const hasChanges = name.trim() !== (session?.user?.name ?? "") || hasPendingImage;
+
+  useEffect(() => {
+    return () => { if (previewUrl) URL.revokeObjectURL(previewUrl); };
+  }, [previewUrl]);
+
+  function handleCancel() {
+    setName(session?.user?.name ?? "");
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPendingFile(null);
+    setPreviewUrl(null);
+    setPendingRecentUrl(null);
+    setCommittedImage(null);
+    setError("");
+    setAvatarError("");
+  }
+
+  function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { setAvatarError("File must be under 5 MB"); return; }
+    if (!file.type.startsWith("image/")) { setAvatarError("Please select an image file"); return; }
+    setAvatarError("");
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(URL.createObjectURL(file));
+    setPendingFile(file);
+    setPendingRecentUrl(null);
+    e.target.value = "";
+  }
+
+  function selectRecentAvatar(url: string) {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPendingFile(null);
+    setPendingRecentUrl(url);
+    setAvatarError("");
+  }
+
+  async function saveChanges() {
+    if (!hasChanges || !session?.user?.id) return;
     setSaving(true); setError("");
-    const res = await fetch(`${getApiUrl()}/users/${session?.user?.id}/profile`, {
+    const body: Record<string, string> = {};
+    if (name.trim() && name.trim() !== session?.user?.name) body.name = name.trim();
+
+    if (pendingFile) {
+      const form = new FormData();
+      form.append("file", pendingFile);
+      form.append("userId", session.user.id);
+      const uploadRes = await fetch("/api/upload/avatar", { method: "POST", body: form });
+      if (!uploadRes.ok) { setError("Photo upload failed"); setSaving(false); return; }
+      const { imageUrl } = await uploadRes.json();
+      body.image = imageUrl;
+    } else if (pendingRecentUrl) {
+      body.image = pendingRecentUrl;
+    }
+
+    const res = await fetch(`${getApiUrl()}/users/${session.user.id}/profile`, {
       method: "PATCH", credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim() }),
+      body: JSON.stringify(body),
     });
     setSaving(false);
     if (!res.ok) { const d = await res.json(); setError(d.error ?? "Failed to save"); return; }
-    await updateSession({ name: name.trim() });
-    setSaved(true); setTimeout(() => setSaved(false), 2000);
+    await updateSession({ name: body.name ?? session.user.name, image: body.image ?? currentImage });
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPendingFile(null);
+    setPreviewUrl(null);
+    setPendingRecentUrl(null);
+    if (body.image) {
+      setCommittedImage(body.image);
+      setLiveImage(body.image);
+      pushRecentAvatar(session.user.id, body.image);
+      setRecentAvatars(loadRecentAvatars(session.user.id));
+    }
+    setSaved(true); setTimeout(() => setSaved(false), 2500);
   }
+
+  const initStr = (name || session?.user?.name || "?").split(" ").map((p: string) => p[0]).join("").slice(0, 2).toUpperCase();
 
   return (
     <Section title="My Account">
-      <FieldGroup label="Display Name">
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && saveName()}
-            style={inputStyle}
-          />
-          <button
-            onClick={saveName}
-            disabled={saving || !name.trim() || name.trim() === session?.user?.name}
-            style={{
-              ...btnGrad,
-              opacity: saving || !name.trim() || name.trim() === session?.user?.name ? 0.5 : 1,
-            }}
-          >
-            {saving ? "Saving…" : saved ? "✓ Saved" : "Save"}
-          </button>
+      <FieldGroup label="Avatar">
+        <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            {displayImage ? (
+              <img src={displayImage} alt="Avatar"
+                style={{ width: "72px", height: "72px", borderRadius: "50%", objectFit: "cover", border: `2px solid ${hasPendingImage ? "#f59e0b" : C.border}` }} />
+            ) : (
+              <div style={{
+                width: "72px", height: "72px", borderRadius: "50%",
+                background: C.grad, display: "flex", alignItems: "center",
+                justifyContent: "center", fontSize: "24px", fontWeight: 700, color: "#fff",
+              }}>{initStr}</div>
+            )}
+            {hasPendingImage && (
+              <div style={{
+                position: "absolute", bottom: 2, right: 2,
+                background: "#f59e0b", borderRadius: "50%", width: "18px", height: "18px",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "10px", border: `2px solid ${C.bg}`,
+              }} title="Preview — not saved yet">!</div>
+            )}
+          </div>
+          <div>
+            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarChange} />
+            <button onClick={() => fileInputRef.current?.click()}
+              style={{ ...btnGrad, marginBottom: "6px" }}>
+              {hasPendingImage ? "Choose Different" : "Change Photo"}
+            </button>
+            <p style={{ margin: 0, fontSize: "11px", color: C.t3, lineHeight: 1.5 }}>
+              {hasPendingImage ? "👁 Preview shown — click Save Changes to apply" : "JPG, PNG or GIF · Max 5 MB"}
+            </p>
+            {avatarError && <p style={{ margin: "4px 0 0", fontSize: "11px", color: C.red }}>{avatarError}</p>}
+          </div>
         </div>
+
+        {/* Recent avatars */}
+        {recentAvatars.length > 0 && (
+          <div style={{ marginTop: "16px" }}>
+            <p style={{ margin: "0 0 8px", fontSize: "11px", fontWeight: 600, color: C.t3, textTransform: "uppercase", letterSpacing: "0.06em" }}>Recent</p>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              {recentAvatars.map((url) => {
+                const isSelected = (pendingRecentUrl ?? committedImage ?? currentImage) === url && !pendingFile;
+                return (
+                  <button key={url} onClick={() => selectRecentAvatar(url)} title="Use this photo"
+                    style={{
+                      padding: 0, background: "none", border: `2px solid ${isSelected ? C.teal : "transparent"}`,
+                      borderRadius: "50%", cursor: "pointer", flexShrink: 0,
+                      outline: isSelected ? `2px solid ${C.teal}` : "none", outlineOffset: "2px",
+                      transition: "border-color 0.15s, outline-color 0.15s",
+                    }}
+                    onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.borderColor = C.border; }}
+                    onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLElement).style.borderColor = "transparent"; }}
+                  >
+                    <img src={url} alt="Recent avatar"
+                      style={{ width: "44px", height: "44px", borderRadius: "50%", objectFit: "cover", display: "block" }} />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </FieldGroup>
+
+      <FieldGroup label="Display Name">
+        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveChanges()} style={inputStyle} />
         {error && <p style={{ margin: "6px 0 0", fontSize: "12px", color: C.red }}>{error}</p>}
       </FieldGroup>
 
       <FieldGroup label="Email">
         <input value={session?.user?.email ?? ""} readOnly style={{ ...inputStyle, opacity: 0.5, cursor: "default" }} />
-        <p style={{ margin: "6px 0 0", fontSize: "12px", color: C.t3 }}>
-          Email cannot be changed after registration.
-        </p>
+        <p style={{ margin: "6px 0 0", fontSize: "12px", color: C.t3 }}>Email cannot be changed after registration.</p>
       </FieldGroup>
 
-      <FieldGroup label="Avatar">
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-          <div style={{
-            width: "64px", height: "64px", borderRadius: "50%",
-            background: C.grad, display: "flex", alignItems: "center",
-            justifyContent: "center", fontSize: "22px", fontWeight: 700, color: "#fff",
-          }}>
-            {(name || session?.user?.name || "?").split(" ").map((p: string) => p[0]).join("").slice(0, 2).toUpperCase()}
-          </div>
-          <p style={{ margin: 0, fontSize: "12px", color: C.t3, lineHeight: 1.6 }}>
-            Your avatar is generated from your initials.<br />
-            Change your display name to change the initials.
-          </p>
+      {/* Save / Cancel bar */}
+      {(hasChanges || saved) && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "10px",
+          padding: "14px 16px", borderRadius: "10px",
+          background: saved ? "rgba(16,185,129,0.08)" : "rgba(245,158,11,0.08)",
+          border: `1px solid ${saved ? "rgba(16,185,129,0.25)" : "rgba(245,158,11,0.25)"}`,
+          marginTop: "8px",
+        }}>
+          {saved ? (
+            <span style={{ fontSize: "13px", color: C.green, fontWeight: 600 }}>✓ Changes saved!</span>
+          ) : (
+            <>
+              <span style={{ fontSize: "13px", color: "#f59e0b", flex: 1 }}>You have unsaved changes</span>
+              <button onClick={handleCancel} style={{
+                padding: "7px 16px", borderRadius: "8px", border: `1px solid ${C.border}`,
+                background: "transparent", color: C.t2, fontSize: "13px", fontWeight: 600, cursor: "pointer",
+              }}>Cancel</button>
+              <button onClick={saveChanges} disabled={saving} style={{ ...btnGrad, opacity: saving ? 0.7 : 1 }}>
+                {saving ? "Saving…" : "Save Changes"}
+              </button>
+            </>
+          )}
         </div>
-      </FieldGroup>
+      )}
     </Section>
   );
 }

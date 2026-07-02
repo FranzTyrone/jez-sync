@@ -152,7 +152,7 @@ export async function serverRoutes(app: FastifyInstance) {
   // Update user profile (name)
   app.patch("/users/:userId/profile", { preHandler: authenticateRequest }, async (request, reply) => {
     const { userId } = request.params as { userId: string };
-    const { name } = request.body as { name?: string };
+    const { name, image } = request.body as { name?: string; image?: string };
 
     if (request.user?.id !== userId) {
       return reply.status(403).send({ error: "Forbidden" });
@@ -166,8 +166,11 @@ export async function serverRoutes(app: FastifyInstance) {
 
     const updated = await prisma.user.update({
       where: { id: userId },
-      data: { ...(name !== undefined && { name: name.trim() }) },
-      select: { id: true, name: true, email: true },
+      data: {
+        ...(name !== undefined && { name: name.trim() }),
+        ...(image !== undefined && { image }),
+      },
+      select: { id: true, name: true, email: true, image: true },
     });
     return updated;
   });
@@ -180,7 +183,7 @@ export async function serverRoutes(app: FastifyInstance) {
       where: { serverId },
       select: {
         user: {
-          select: { id: true, name: true },
+          select: { id: true, name: true, image: true },
         },
       },
       orderBy: { joinedAt: "asc" },

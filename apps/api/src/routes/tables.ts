@@ -428,10 +428,26 @@ export async function tableRoutes(app: FastifyInstance) {
 
   // Helper: Generate stable, deduped option IDs for STATUS/PRIORITY
   function generateStatusOptions(labels: string[]) {
-    const options = labels.map((label, idx) => ({
-      id: `opt_${label.toLowerCase().replace(/\s+/g, "_")}_${idx}`,
-      label,
-    }));
+    const COLOR_MAP: Array<[RegExp, string]> = [
+      [/done|complete|finish|approv|ship|publish|deploy|launch|success/i, "#10b981"],
+      [/progress|active|ongoing|develop|build|implement|draft|writ/i,    "#3b82f6"],
+      [/review|feedback|check|test|qa|verify|audit|inspect/i,            "#f59e0b"],
+      [/block|stuck|fail|error|cancel|reject|hold/i,                     "#ef4444"],
+      [/schedul|plan|upcoming|next|queue/i,                              "#06b6d4"],
+      [/idea|backlog|new|open|todo|to.do|not.start/i,                   "#8b5cf6"],
+      [/revis|update|rework|fix|patch/i,                                "#f97316"],
+      [/low|easy|minor/i,                                               "#10b981"],
+      [/medium|moderate|normal/i,                                        "#f59e0b"],
+      [/high|hard|major/i,                                              "#f97316"],
+      [/urgent|critical|blocker|severe/i,                               "#ef4444"],
+    ];
+    const FALLBACK_COLORS = ["#8b5cf6","#3b82f6","#06b6d4","#10b981","#f59e0b","#f97316","#ef4444"];
+
+    const options = labels.map((label, idx) => {
+      const match = COLOR_MAP.find(([re]) => re.test(label));
+      const color = match ? match[1] : FALLBACK_COLORS[idx % FALLBACK_COLORS.length];
+      return { id: `opt_${label.toLowerCase().replace(/\s+/g, "_")}_${idx}`, label, color };
+    });
     const labelToId = Object.fromEntries(options.map(o => [o.label, o.id]));
     return { settings: { options }, labelToId };
   }

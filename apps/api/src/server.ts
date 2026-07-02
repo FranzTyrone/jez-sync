@@ -23,6 +23,48 @@ import {
 const app = Fastify({ logger: true });
 const activeVoiceUsers = new Map<string, string>();
 
+// ─── Music room state ─────────────────────────────────────────
+interface MusicItem {
+  id: string;
+  videoId: string;
+  title: string;
+  thumbnail: string;
+  addedBy: string;
+  duration?: string;
+}
+interface MusicRoomState {
+  queue: MusicItem[];
+  currentIndex: number;
+  startedAt: number | null;
+  paused: boolean;
+  pausedAt: number;
+}
+const musicRooms = new Map<string, MusicRoomState>();
+function getMusicRoom(channelId: string): MusicRoomState {
+  if (!musicRooms.has(channelId)) {
+    musicRooms.set(channelId, { queue: [], currentIndex: 0, startedAt: null, paused: false, pausedAt: 0 });
+  }
+  return musicRooms.get(channelId)!;
+}
+function broadcastMusicState(io: Server, channelId: string) {
+  const state = getMusicRoom(channelId);
+  io.to(`voice:${channelId}`).emit("music:state", {
+    queue: state.queue,
+    currentIndex: state.currentIndex,
+    startedAt: state.startedAt,
+    paused: state.paused,
+    pausedAt: state.pausedAt,
+  });
+  // Lightweight global broadcast so clients that aren't in the voice room
+  // (e.g. the server sidebar) can still show the music bot as active.
+  const current = state.queue[state.currentIndex];
+  io.emit("music:activeChanged", {
+    channelId,
+    active: !!current && !state.paused,
+    title: current?.title ?? null,
+  });
+}
+
 // Get allowed origins from env or default to localhost
 function getAllowedOrigins(): string | RegExp | (string | RegExp)[] {
   const corsOrigins = process.env.CORS_ORIGINS || "http://localhost:3000";
@@ -106,7 +148,7 @@ const start = async () => {
 
       socket.on(
         "voice:join",
-        async (data: { channelId: string; userName: string; userId: string }, callback) => {
+        async (data: { channelId: string; userName: string; userId: string; userImage?: string | null }, callback) => {
           try {
             const key = `${data.channelId}:${data.userId}`;
             const existingSocketId = activeVoiceUsers.get(key);
@@ -125,6 +167,7 @@ const start = async () => {
             socket.join(`voice:${data.channelId}`);
             socket.data.userName = data.userName;
             socket.data.userId = data.userId;
+            socket.data.userImage = data.userImage ?? null;
             socket.data.channelId = data.channelId;
             activeVoiceUsers.set(key, socket.id);
 
@@ -168,13 +211,20 @@ const start = async () => {
 
       socket.on("voice:getChannelParticipants", (data: { channelId: string }, callback) => {
         const socketsInRoom = io.sockets.adapter.rooms.get(`voice:${data.channelId}`);
-        const participants: { socketId: string; userName: string }[] = [];
+        const participants: { socketId: string; userName: string; userId?: string; isMuted?: boolean; isDeafened?: boolean }[] = [];
 
         if (socketsInRoom) {
           for (const socketId of socketsInRoom) {
-            const otherSocket = io.sockets.sockets.get(socketId);
-            if (otherSocket?.data.userName) {
-              participants.push({ socketId, userName: otherSocket.data.userName });
+            const s = io.sockets.sockets.get(socketId);
+            if (s?.data.userName) {
+              participants.push({
+                socketId,
+                userName: s.data.userName,
+                userId: s.data.userId,
+                userImage: s.data.userImage ?? null,
+                isMuted: s.data.isMuted ?? false,
+                isDeafened: s.data.isDeafened ?? false,
+              });
             }
           }
         }
@@ -275,6 +325,7 @@ const start = async () => {
       });
 
       socket.on("voice:muteStateChanged", (data: { channelId: string; isMuted: boolean }) => {
+        socket.data.isMuted = data.isMuted;
         io.to(`voice:${data.channelId}`).emit("voice:participantMuteChanged", {
           socketId: socket.id,
           isMuted: data.isMuted,
@@ -282,6 +333,7 @@ const start = async () => {
       });
 
       socket.on("voice:deafenStateChanged", (data: { channelId: string; isDeafened: boolean }) => {
+        socket.data.isDeafened = data.isDeafened;
         io.to(`voice:${data.channelId}`).emit("voice:participantDeafenChanged", {
           socketId: socket.id,
           isDeafened: data.isDeafened,
@@ -426,6 +478,114 @@ const start = async () => {
       socket.on("annotation:end", (data: { channelId: string }) => {
         endAnnotationSession(data.channelId);
         io.to(`voice:${data.channelId}`).emit("annotation:clearAll");
+      });
+
+      // ─── Music room events ──────────────────────────────────────
+      socket.on("music:add", (data: { channelId: string; videoId: string; title: string; thumbnail: string; addedBy: string; duration?: string; replyAuthor?: string; replyContent?: string }, callback?: (res: { itemId: string; position: number }) => void) => {
+        const room = getMusicRoom(data.channelId);
+        const item: MusicItem = { id: `${Date.now()}`, videoId: data.videoId, title: data.title, thumbnail: data.thumbnail, addedBy: data.addedBy, ...(data.duration ? { duration: data.duration } : {}) };
+        room.queue.push(item);
+        const position = room.queue.length;
+        const wasEmpty = position === 1 && room.startedAt === null;
+        if (wasEmpty) { room.startedAt = Date.now(); room.paused = false; room.currentIndex = 0; }
+        broadcastMusicState(io, data.channelId);
+        io.to(`voice:${data.channelId}`).emit("music:announce", {
+          itemId: item.id,
+          title: item.title,
+          thumbnail: item.thumbnail,
+          duration: item.duration ?? null,
+          position,
+          addedBy: item.addedBy,
+          replyAuthor: data.replyAuthor ?? item.addedBy,
+          replyContent: data.replyContent ?? "",
+          timestamp: Date.now(),
+        });
+        if (callback) callback({ itemId: item.id, position });
+      });
+
+      socket.on("music:skip", (data: { channelId: string }) => {
+        const room = getMusicRoom(data.channelId);
+        room.currentIndex++;
+        if (room.currentIndex >= room.queue.length) {
+          room.queue = []; room.currentIndex = 0; room.startedAt = null; room.paused = false; room.pausedAt = 0;
+        } else {
+          room.startedAt = Date.now(); room.paused = false; room.pausedAt = 0;
+        }
+        broadcastMusicState(io, data.channelId);
+      });
+
+      socket.on("music:pause", (data: { channelId: string }) => {
+        const room = getMusicRoom(data.channelId);
+        if (!room.paused && room.startedAt) {
+          room.pausedAt = Date.now() - room.startedAt;
+          room.paused = true;
+          room.startedAt = null;
+        }
+        broadcastMusicState(io, data.channelId);
+      });
+
+      socket.on("music:resume", (data: { channelId: string }) => {
+        const room = getMusicRoom(data.channelId);
+        if (room.paused) {
+          room.startedAt = Date.now() - room.pausedAt;
+          room.paused = false;
+        }
+        broadcastMusicState(io, data.channelId);
+      });
+
+      socket.on("music:remove", (data: { channelId: string; itemId: string }) => {
+        const room = getMusicRoom(data.channelId);
+        const idx = room.queue.findIndex(q => q.id === data.itemId);
+        if (idx === -1) return;
+        room.queue.splice(idx, 1);
+        if (idx < room.currentIndex) room.currentIndex--;
+        else if (idx === room.currentIndex) {
+          if (room.currentIndex >= room.queue.length) { room.currentIndex = 0; room.startedAt = null; room.paused = false; }
+          else { room.startedAt = Date.now(); room.paused = false; }
+        }
+        broadcastMusicState(io, data.channelId);
+      });
+
+      socket.on("music:getState", (data: { channelId: string }, callback) => {
+        const room = getMusicRoom(data.channelId);
+        callback({ queue: room.queue, currentIndex: room.currentIndex, startedAt: room.startedAt, paused: room.paused, pausedAt: room.pausedAt });
+      });
+
+      socket.on("voice:leave", () => {
+        const channelId = socket.data.channelId;
+        if (!channelId) return;
+
+        if (socket.data.userId) {
+          const key = `${channelId}:${socket.data.userId}`;
+          if (activeVoiceUsers.get(key) === socket.id) {
+            activeVoiceUsers.delete(key);
+          }
+        }
+
+        // Close and clear all producers
+        if (socket.data.producers) {
+          for (const [, entry] of Object.entries(socket.data.producers) as any) {
+            try { entry.producer.close(); } catch {}
+            socket.to(`voice:${channelId}`).emit("voice:producerClosed", {
+              socketId: socket.id,
+              mediaTag: entry.mediaTag,
+            });
+          }
+          socket.data.producers = {};
+        }
+
+        // Close and clear all transports so next join starts fresh
+        if (socket.data.transports) {
+          for (const transport of Object.values(socket.data.transports) as any[]) {
+            try { transport.close(); } catch {}
+          }
+          socket.data.transports = {};
+        }
+
+        socket.to(`voice:${channelId}`).emit("voice:participantLeft", { socketId: socket.id });
+        socket.leave(`voice:${channelId}`);
+        socket.data.channelId = null;
+        io.emit("voice:channelParticipantsChanged", { channelId });
       });
 
       socket.on("disconnect", () => {

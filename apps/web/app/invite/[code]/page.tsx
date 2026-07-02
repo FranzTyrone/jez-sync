@@ -221,7 +221,7 @@ export default function InvitePage() {
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
+    .map((w) => (w[0] ?? "").toUpperCase())
     .join("");
 
   const isLoggedIn = !!session?.user?.id;

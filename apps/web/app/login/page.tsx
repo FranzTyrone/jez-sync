@@ -15,9 +15,30 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [focused, setFocused] = useState<string | null>(null);
+  const [darkMode, setDarkMode] = useState(false);
   const router = useRouter();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  const t = {
+    panelBg:      darkMode ? "#0f172a" : "#ffffff",
+    heading:      darkMode ? "#f1f5f9" : "#0f172a",
+    subtitle:     darkMode ? "#64748b" : "#94a3b8",
+    label:        darkMode ? "#94a3b8" : "#374151",
+    inputBg:      darkMode ? "#1e293b" : "#f9fafb",
+    inputBgFocus: darkMode ? "#162032" : "#f8fffe",
+    inputBorder:  darkMode ? "#334155" : "#e5e7eb",
+    inputText:    darkMode ? "#e2e8f0" : "#111827",
+    dividerLine:  darkMode ? "#1e293b" : "#f1f5f9",
+    dividerText:  darkMode ? "#475569" : "#cbd5e1",
+    linkBorder:   darkMode ? "#334155" : "#e5e7eb",
+    linkText:     darkMode ? "#94a3b8" : "#374151",
+    linkBgHover:  darkMode ? "#1e293b" : "#f0fdfb",
+    footerText:   darkMode ? "#475569" : "#cbd5e1",
+    termsText:    darkMode ? "#64748b" : "#94a3b8",
+    toggleBg:     darkMode ? "#1e293b" : "#f1f5f9",
+    toggleColor:  darkMode ? "#94a3b8" : "#64748b",
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -73,7 +94,7 @@ export default function LoginPage() {
             const wave = Math.exp(-((dist - radius) ** 2) * 1.8);
             if (wave > 0.04) {
               const idx = row * cols + col;
-              brightness[idx] = Math.min(1, brightness[idx] + wave * 0.85);
+              brightness[idx] = Math.min(1, (brightness[idx] ?? 0) + wave * 0.85);
             }
           }
         }
@@ -82,7 +103,7 @@ export default function LoginPage() {
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           const idx = row * cols + col;
-          const b = brightness[idx];
+          const b = brightness[idx] ?? 0;
           const x = col * CELL;
           const y = row * CELL;
           if (b > 0.004) {
@@ -92,7 +113,7 @@ export default function LoginPage() {
           ctx.strokeStyle = `rgba(66,219,188,${0.045 + b * 0.5})`;
           ctx.lineWidth = 0.5;
           ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
-          brightness[idx] = Math.max(0, b - decay[idx]);
+          brightness[idx] = Math.max(0, b - (decay[idx] ?? 0));
         }
       }
       raf = requestAnimationFrame(draw);
@@ -122,11 +143,11 @@ export default function LoginPage() {
   const inputStyle = (name: string): React.CSSProperties => ({
     width: "100%",
     padding: "12px 16px",
-    backgroundColor: focused === name ? "#f8fffe" : "#f9fafb",
-    border: focused === name ? "1.5px solid #42DBBC" : "1.5px solid #e5e7eb",
+    backgroundColor: focused === name ? t.inputBgFocus : t.inputBg,
+    border: focused === name ? "1.5px solid #42DBBC" : `1.5px solid ${t.inputBorder}`,
     borderRadius: "10px",
     fontSize: "14px",
-    color: "#111827",
+    color: t.inputText,
     outline: "none",
     boxSizing: "border-box",
     transition: "border-color 0.18s, background-color 0.18s, box-shadow 0.18s",
@@ -158,29 +179,20 @@ export default function LoginPage() {
         }}
         className="branding-panel"
       >
-        {/* Grid canvas */}
         <canvas
           ref={canvasRef}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}
         />
-
-        {/* Bottom-edge glow */}
         <div style={{
           position: "absolute", bottom: 0, left: 0, right: 0, height: "220px",
           background: "linear-gradient(to top, rgba(66,219,188,0.08), transparent)",
           pointerEvents: "none",
         }} />
 
-        {/* Content */}
         <div style={{ position: "relative", zIndex: 1, width: "100%", maxWidth: "380px" }}>
-          {/* Headline */}
           <h2 style={{
-            fontSize: "32px",
-            fontWeight: 800,
-            color: "#ffffff",
-            margin: "0 0 14px",
-            lineHeight: 1.2,
-            letterSpacing: "-0.03em",
+            fontSize: "32px", fontWeight: 800, color: "#ffffff",
+            margin: "0 0 14px", lineHeight: 1.2, letterSpacing: "-0.03em",
           }}>
             Everything your<br />
             <span style={{
@@ -193,16 +205,13 @@ export default function LoginPage() {
             Voice, video, chat, and project management — built for teams that move fast.
           </p>
 
-          {/* Feature list */}
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             {features.map((f) => (
               <div key={f.label} style={{ display: "flex", alignItems: "center", gap: "14px" }}>
                 <div style={{
                   width: "40px", height: "40px", borderRadius: "10px", flexShrink: 0,
-                  background: "rgba(66,219,188,0.1)",
-                  border: "1px solid rgba(66,219,188,0.2)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "18px",
+                  background: "rgba(66,219,188,0.1)", border: "1px solid rgba(66,219,188,0.2)",
+                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px",
                 }}>
                   {f.icon}
                 </div>
@@ -214,16 +223,10 @@ export default function LoginPage() {
             ))}
           </div>
 
-          {/* Bottom badge */}
           <div style={{
-            marginTop: "48px",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-            background: "rgba(66,219,188,0.08)",
-            border: "1px solid rgba(66,219,188,0.18)",
-            borderRadius: "100px",
-            padding: "6px 14px",
+            marginTop: "48px", display: "inline-flex", alignItems: "center", gap: "8px",
+            background: "rgba(66,219,188,0.08)", border: "1px solid rgba(66,219,188,0.18)",
+            borderRadius: "100px", padding: "6px 14px",
           }}>
             <div style={{ width: "7px", height: "7px", borderRadius: "50%", backgroundColor: "#42DBBC", animation: "pulse 2s ease-in-out infinite" }} />
             <span style={{ fontSize: "11px", color: "#42DBBC", fontWeight: 600, letterSpacing: "0.05em" }}>ALL SYSTEMS OPERATIONAL</span>
@@ -232,23 +235,43 @@ export default function LoginPage() {
       </div>
 
       {/* ── Right form panel ── */}
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#ffffff",
-          padding: "3rem 2rem",
-          position: "relative",
-        }}
-      >
-        {/* Subtle top-right tint */}
+      <div style={{
+        flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+        backgroundColor: t.panelBg, padding: "3rem 2rem", position: "relative",
+        transition: "background-color 0.25s ease",
+      }}>
         <div style={{
           position: "absolute", top: 0, right: 0, width: "300px", height: "300px",
           background: "radial-gradient(circle, rgba(66,219,188,0.06) 0%, transparent 70%)",
           pointerEvents: "none",
         }} />
+
+        {/* Dark mode toggle */}
+        <button
+          onClick={() => setDarkMode(!darkMode)}
+          title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+          style={{
+            position: "absolute", top: "20px", right: "20px",
+            width: "38px", height: "38px", borderRadius: "10px",
+            background: t.toggleBg, border: "none", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: t.toggleColor, transition: "background-color 0.2s, color 0.2s",
+          }}
+        >
+          {darkMode ? (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="5"/>
+              <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          )}
+        </button>
 
         <div style={{ width: "100%", maxWidth: "380px", position: "relative" }}>
 
@@ -264,15 +287,22 @@ export default function LoginPage() {
                 priority
               />
             </div>
+            <h1 style={{
+              fontSize: "26px", fontWeight: 800, color: t.heading,
+              margin: "0 0 6px", letterSpacing: "-0.03em", textAlign: "center",
+              transition: "color 0.25s ease",
+            }}>
+              Welcome back
+            </h1>
+            <p style={{ fontSize: "14px", color: t.subtitle, margin: "0 0 8px", textAlign: "center", transition: "color 0.25s ease" }}>
+              Sign in to your workspace to continue
+            </p>
           </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
             <div>
-              <label style={{
-                display: "block", fontSize: "12px", fontWeight: 600,
-                color: "#374151", marginBottom: "7px",
-              }}>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: t.label, marginBottom: "7px", transition: "color 0.25s ease" }}>
                 Email address
               </label>
               <input
@@ -288,10 +318,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label style={{
-                display: "block", fontSize: "12px", fontWeight: 600,
-                color: "#374151", marginBottom: "7px",
-              }}>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: t.label, marginBottom: "7px", transition: "color 0.25s ease" }}>
                 Password
               </label>
               <div style={{ position: "relative" }}>
@@ -379,9 +406,9 @@ export default function LoginPage() {
 
           {/* Divider */}
           <div style={{ display: "flex", alignItems: "center", gap: "14px", margin: "28px 0" }}>
-            <div style={{ flex: 1, height: "1px", backgroundColor: "#f1f5f9" }} />
-            <span style={{ fontSize: "12px", color: "#cbd5e1", whiteSpace: "nowrap" }}>Don't have an account?</span>
-            <div style={{ flex: 1, height: "1px", backgroundColor: "#f1f5f9" }} />
+            <div style={{ flex: 1, height: "1px", backgroundColor: t.dividerLine, transition: "background-color 0.25s ease" }} />
+            <span style={{ fontSize: "12px", color: t.dividerText, whiteSpace: "nowrap", transition: "color 0.25s ease" }}>Don't have an account?</span>
+            <div style={{ flex: 1, height: "1px", backgroundColor: t.dividerLine, transition: "background-color 0.25s ease" }} />
           </div>
 
           <a
@@ -389,8 +416,8 @@ export default function LoginPage() {
             style={{
               display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
               padding: "12px", borderRadius: "10px",
-              border: "1.5px solid #e5e7eb",
-              color: "#374151", fontSize: "14px", fontWeight: 600,
+              border: `1.5px solid ${t.linkBorder}`,
+              color: t.linkText, fontSize: "14px", fontWeight: 600,
               textDecoration: "none",
               transition: "border-color 0.18s, color 0.18s, background-color 0.18s",
               backgroundColor: "transparent",
@@ -399,23 +426,23 @@ export default function LoginPage() {
               const el = e.currentTarget;
               el.style.borderColor = "#42DBBC";
               el.style.color = "#21579A";
-              el.style.backgroundColor = "#f0fdfb";
+              el.style.backgroundColor = t.linkBgHover;
             }}
             onMouseLeave={(e) => {
               const el = e.currentTarget;
-              el.style.borderColor = "#e5e7eb";
-              el.style.color = "#374151";
+              el.style.borderColor = t.linkBorder;
+              el.style.color = t.linkText;
               el.style.backgroundColor = "transparent";
             }}
           >
             Create a free account
           </a>
 
-          <p style={{ fontSize: "11px", color: "#cbd5e1", textAlign: "center", marginTop: "24px", lineHeight: 1.6 }}>
+          <p style={{ fontSize: "11px", color: t.footerText, textAlign: "center", marginTop: "24px", lineHeight: 1.6, transition: "color 0.25s ease" }}>
             By signing in, you agree to our{" "}
-            <span style={{ color: "#94a3b8", cursor: "pointer" }}>Terms</span>
+            <span style={{ color: t.termsText, cursor: "pointer" }}>Terms</span>
             {" "}and{" "}
-            <span style={{ color: "#94a3b8", cursor: "pointer" }}>Privacy Policy</span>.
+            <span style={{ color: t.termsText, cursor: "pointer" }}>Privacy Policy</span>.
           </p>
         </div>
       </div>
@@ -424,10 +451,6 @@ export default function LoginPage() {
         @keyframes pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.5; transform: scale(0.85); }
-        }
-        @keyframes cardIn {
-          from { opacity: 0; transform: translateX(16px); }
-          to   { opacity: 1; transform: translateX(0); }
         }
         .branding-panel { animation: fadeIn 0.6s ease; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

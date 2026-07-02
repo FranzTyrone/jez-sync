@@ -1,97 +1,134 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import * as mediasoupClient from "mediasoup-client";
-import { getSocket, resetSocket } from "@/lib/socket";
+import { getSocket } from "@/lib/socket";
+import { getApiUrl } from "@/lib/config";
 import AnnotationCanvas from "./AnnotationCanvas";
 import { useSession } from "next-auth/react";
 import { useVoice } from "@/lib/VoiceContext";
+import { useTheme } from "@/lib/ThemeContext";
+import { useProfileImage } from "@/lib/ProfileImageContext";
 
 type Props = {
   channelId: string;
+  autoJoin?: boolean;
 };
+
+type MusicItem = {
+  id: string;
+  videoId: string;
+  title: string;
+  thumbnail: string;
+  addedBy: string;
+  duration?: string | null;
+};
+
 
 type Participant = {
   socketId: string;
   userName: string;
+  userImage?: string | null;
   isMuted?: boolean;
   isDeafened?: boolean;
 };
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
-const C = {
-  bg: "#0d1117",          // base canvas — true dark
-  surface: "#161d2a",     // card/tile bg — clearly lifted from base
-  surfaceHover: "#1c2638",
-  border: "#252f42",      // solid border, always visible
-  borderSubtle: "#1c2535",
-  accent: "#6366f1",
-  accentBg: "#1e1f4a",    // deep indigo fill
-  accentBorder: "#3730a3",
-  danger: "#ef4444",
-  dangerBg: "#2d1515",
-  dangerBorder: "#7f1d1d",
-  success: "#10b981",
-  successBg: "#0d2b20",
-  successBorder: "#064e3b",
-  amber: "#f59e0b",
-  amberBg: "#2a1f08",
-  amberBorder: "#78350f",
-  textPrimary: "#e2e8f0",
-  textMuted: "#4b5a72",
-  textDim: "#8897ae",
-  pill: "#111827",        // control bar bg — opaque dark
-};
-
-const tileColors = [
-  "#131d2e",  // deep navy
-  "#0e1e1a",  // deep teal
-  "#1a1030",  // deep violet
-  "#1e1015",  // deep rose
-  "#1a150d",  // deep amber
-  "#0d1a28",  // deep slate-blue
-];
+function voiceColors(dark: boolean) {
+  return dark ? {
+    bg: "#0d1117",
+    surface: "#161d2a",
+    surfaceHover: "#1c2638",
+    border: "#252f42",
+    borderSubtle: "#1c2535",
+    accent: "#6366f1",
+    accentBg: "#1e1f4a",
+    accentBorder: "#3730a3",
+    danger: "#ef4444",
+    dangerBg: "#2d1515",
+    dangerBorder: "#7f1d1d",
+    success: "#10b981",
+    successBg: "#0d2b20",
+    successBorder: "#064e3b",
+    amber: "#f59e0b",
+    amberBg: "#2a1f08",
+    amberBorder: "#78350f",
+    textPrimary: "#e2e8f0",
+    textMuted: "#4b5a72",
+    textDim: "#8897ae",
+    pill: "#111827",
+    avatarBg: "#1e2d45",
+    tileColors: ["#131d2e","#0e1e1a","#1a1030","#1e1015","#1a150d","#0d1a28"],
+  } : {
+    bg: "#f4f6fa",
+    surface: "#ffffff",
+    surfaceHover: "#f1f5f9",
+    border: "rgba(0,0,0,0.1)",
+    borderSubtle: "rgba(0,0,0,0.06)",
+    accent: "#6366f1",
+    accentBg: "#ede9fe",
+    accentBorder: "#a5b4fc",
+    danger: "#ef4444",
+    dangerBg: "#fef2f2",
+    dangerBorder: "#fca5a5",
+    success: "#10b981",
+    successBg: "#ecfdf5",
+    successBorder: "#6ee7b7",
+    amber: "#f59e0b",
+    amberBg: "#fffbeb",
+    amberBorder: "#fde68a",
+    textPrimary: "#0f172a",
+    textMuted: "#94a3b8",
+    textDim: "#64748b",
+    pill: "#ffffff",
+    avatarBg: "#dbeafe",
+    tileColors: ["#e8edf5","#e8f5f0","#ede8f5","#f5e8ec","#f5f0e8","#e8eef5"],
+  };
+}
 
 // ─── Small reusable pieces ─────────────────────────────────────────────────────
-function Avatar({ name, size = 52 }: { name: string; size?: number }) {
-  const initials = name
-    .split(" ")
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+function Avatar({ name, image, size = 52 }: { name: string; image?: string | null; size?: number }) {
+  const { dark } = useTheme();
+  const C = voiceColors(dark);
+  const inits = name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+  if (image) {
+    return (
+      <img
+        src={image}
+        alt={name}
+        style={{
+          width: size, height: size, borderRadius: "50%", objectFit: "cover",
+          border: `1.5px solid ${C.border}`, flexShrink: 0,
+        }}
+      />
+    );
+  }
   return (
     <div
       style={{
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        background: "#1e2d45",
-        border: `1.5px solid ${C.border}`,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: C.textPrimary,
-        fontSize: size * 0.32,
-        fontWeight: 600,
-        letterSpacing: "0.02em",
-        fontFamily: "system-ui, -apple-system, sans-serif",
+        width: size, height: size, borderRadius: "50%",
+        background: C.avatarBg, border: `1.5px solid ${C.border}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: C.textPrimary, fontSize: size * 0.32, fontWeight: 600,
+        letterSpacing: "0.02em", fontFamily: "system-ui, -apple-system, sans-serif",
         flexShrink: 0,
       }}
     >
-      {initials}
+      {inits}
     </div>
   );
 }
 
 function NameTag({ children }: { children: React.ReactNode }) {
+  const { dark } = useTheme();
+  const C = voiceColors(dark);
   return (
     <span
       style={{
         position: "absolute",
         bottom: 10,
         left: 10,
-        background: "rgba(13,17,23,0.8)",
+        background: dark ? "rgba(13,17,23,0.8)" : "rgba(255,255,255,0.85)",
         backdropFilter: "blur(8px)",
         WebkitBackdropFilter: "blur(8px)",
         color: C.textPrimary,
@@ -125,12 +162,14 @@ function IconBtn({
   children: React.ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
+  const { dark } = useTheme();
+  const C = voiceColors(dark);
 
   const bgMap = {
     default: active
-      ? "#1e2d45"
+      ? C.avatarBg
       : hovered
-      ? "#192333"
+      ? C.surfaceHover
       : C.surface,
     danger: hovered ? C.danger : active ? C.danger : C.surface,
     success: active ? C.success : hovered ? C.successBg : C.surface,
@@ -182,8 +221,11 @@ function IconBtn({
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
-export default function VoiceChannel({ channelId }: Props) {
+export default function VoiceChannel({ channelId, autoJoin }: Props) {
   const { actionsRef, setVoiceState, voicePrefs, setVoicePrefs } = useVoice();
+  const { dark } = useTheme();
+  const C = voiceColors(dark);
+  const tileColors = C.tileColors;
 
   const [connected, setConnected] = useState(false);
   const [isPushToTalk, setIsPushToTalk] = useState(false);
@@ -201,8 +243,46 @@ export default function VoiceChannel({ channelId }: Props) {
   const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [showMusic, setShowMusic] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  type ChatMessage = {
+    id: string;
+    content: string;
+    author: { id: string; name: string; image?: string | null };
+    queueAdd?: {
+      title: string;
+      thumbnail: string;
+      duration: string | null;
+      position: number;
+      addedBy: string;
+      replyAuthor: string;
+      replyContent: string;
+      timestamp: number;
+    };
+  };
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [unreadCount, setUnreadCount] = useState(0);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const [musicQueue, setMusicQueue] = useState<MusicItem[]>([]);
+  const [musicIndex, setMusicIndex] = useState(0);
+  const [musicStartedAt, setMusicStartedAt] = useState<number | null>(null);
+  const [musicPaused, setMusicPaused] = useState(false);
+  const [musicPausedAt, setMusicPausedAt] = useState(0);
+  const [musicLoading, setMusicLoading] = useState(false);
+  const currentSong = musicQueue[musicIndex] ?? null;
+  // Memoized so the iframe's `src` stays byte-identical across unrelated re-renders
+  // (hover, tab focus, chat updates, etc.) — recomputing it from Date.now() on every
+  // render would change `src` and make the browser reload the embed, restarting audio.
+  const musicStartSeconds = useMemo(() => {
+    if (musicStartedAt) return Math.max(0, Math.floor((Date.now() - musicStartedAt) / 1000));
+    if (musicPausedAt) return Math.floor(musicPausedAt / 1000);
+    return 0;
+  }, [musicStartedAt, musicPausedAt]);
   const [videoRect, setVideoRect] = useState({ offsetX: 0, offsetY: 0, width: 640, height: 360 });
   const { data: session } = useSession();
+  const { liveImage } = useProfileImage();
+  const myImage = liveImage ?? (session?.user as any)?.image ?? null;
   const myColor = "#6366f1";
 
   const socket = getSocket();
@@ -279,6 +359,7 @@ export default function VoiceChannel({ channelId }: Props) {
         channelId,
         userName: session?.user?.name || "Someone",
         userId: session?.user?.id || "unknown",
+        userImage: myImage,
       });
       if (joinResponse.error) return;
 
@@ -412,7 +493,17 @@ export default function VoiceChannel({ channelId }: Props) {
     }
   }
 
+  useEffect(() => {
+    if (autoJoin && session?.user?.id && !connected) {
+      joinVoice();
+    }
+  }, [autoJoin, session?.user?.id]);
+
   function leaveVoice() {
+    // Emit voice:leave BEFORE any cleanup so the server removes us from the room
+    // and broadcasts participantsChanged while the socket is still listening.
+    // Do NOT call resetSocket() here — removing listeners kills the event delivery.
+    socket.emit("voice:leave");
     producerRef.current?.close();
     screenProducerRef.current?.close();
     camProducerRef.current?.close();
@@ -421,7 +512,6 @@ export default function VoiceChannel({ channelId }: Props) {
     localCamStream?.getTracks().forEach((t) => t.stop());
     localScreenStream?.getTracks().forEach((t) => t.stop());
     if (audioContainerRef.current) audioContainerRef.current.innerHTML = "";
-    resetSocket();
     setVoiceState(null);
     actionsRef.current = null;
     setConnected(false);
@@ -479,6 +569,7 @@ export default function VoiceChannel({ channelId }: Props) {
     toggleDeafen,
     toggleShare: isSharing ? stopScreenShare : startScreenShare,
     leaveVoice,
+    joinVoice,
   };
 
   // Sync connection/sharing state to context so the sidebar panel stays accurate.
@@ -527,6 +618,7 @@ export default function VoiceChannel({ channelId }: Props) {
 
       const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 360 } });
       const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) return;
       videoTrack.onended = () => toggleCam();
 
       const producer = await camTransport.produce({ track: videoTrack, appData: { mediaTag: "cam" } });
@@ -564,6 +656,7 @@ export default function VoiceChannel({ channelId }: Props) {
 
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) return;
       videoTrack.onended = () => stopScreenShare();
 
       const producer = await screenTransport.produce({ track: videoTrack, appData: { mediaTag: "screen" } });
@@ -643,16 +736,144 @@ export default function VoiceChannel({ channelId }: Props) {
 
   useEffect(() => {
     return () => {
+      // Emit before any cleanup so server receives the event and updates all sidebars
+      socket.emit("voice:leave");
       producerRef.current?.close();
       screenProducerRef.current?.close();
       camProducerRef.current?.close();
       consumersRef.current.forEach((c) => c.close());
       consumersRef.current.clear();
-      resetSocket();
       setVoiceState(null);
       actionsRef.current = null;
     };
   }, []);
+
+  // ─── Music room socket listener ───────────────────────────────
+  useEffect(() => {
+    if (!connected) return;
+    socket.emit("music:getState", { channelId }, (state: any) => {
+      setMusicQueue(state.queue ?? []);
+      setMusicIndex(state.currentIndex ?? 0);
+      setMusicStartedAt(state.startedAt ?? null);
+      setMusicPaused(state.paused ?? false);
+      setMusicPausedAt(state.pausedAt ?? 0);
+    });
+    function onMusicState(state: any) {
+      setMusicQueue(state.queue ?? []);
+      setMusicIndex(state.currentIndex ?? 0);
+      setMusicStartedAt(state.startedAt ?? null);
+      setMusicPaused(state.paused ?? false);
+      setMusicPausedAt(state.pausedAt ?? 0);
+    }
+    function onMusicAnnounce(data: any) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `music-announce-${data.itemId}`,
+          content: "",
+          author: { id: "music-bot", name: "Music Bot", image: null },
+          queueAdd: {
+            title: data.title,
+            thumbnail: data.thumbnail,
+            duration: data.duration ?? null,
+            position: data.position,
+            addedBy: data.addedBy,
+            replyAuthor: data.replyAuthor,
+            replyContent: data.replyContent,
+            timestamp: data.timestamp ?? Date.now(),
+          },
+        },
+      ]);
+      setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    }
+    socket.on("music:state", onMusicState);
+    socket.on("music:announce", onMusicAnnounce);
+    return () => { socket.off("music:state", onMusicState); socket.off("music:announce", onMusicAnnounce); };
+  }, [connected, channelId]);
+
+  // ─── Voice channel chat ────────────────────────────────────────
+  useEffect(() => {
+    if (!connected) return;
+    // Load history
+    fetch(`${getApiUrl()}/channels/${channelId}/messages?limit=50`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((msgs) => { if (Array.isArray(msgs)) setChatMessages(msgs.reverse()); })
+      .catch(() => {});
+    socket.emit("channel:join", channelId);
+    function onMessage(msg: any) {
+      setChatMessages((prev) => [...prev, msg]);
+      setUnreadCount((n) => showChat ? 0 : n + 1);
+      setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    }
+    socket.on("message:receive", onMessage);
+    return () => { socket.off("message:receive", onMessage); };
+  }, [connected, channelId]);
+
+  useEffect(() => {
+    if (showChat) {
+      setUnreadCount(0);
+      setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "instant" }), 50);
+    }
+  }, [showChat]);
+
+  function botNotice(text: string) {
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        id: `bot-${Date.now()}-${Math.random()}`,
+        content: text,
+        author: { id: "music-bot", name: "Music Bot", image: null },
+      },
+    ]);
+    setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+  }
+
+  async function sendChatMessage() {
+    const content = chatInput.trim();
+    if (!content || !session?.user?.id) return;
+
+    // Music commands
+    const playMatch = content.match(/^\/play(?:\s+(.+))?$/i);
+    if (playMatch) {
+      setChatInput("");
+      const input = (playMatch[1] ?? "").trim();
+      if (!input) { botNotice("Usage: /play <song name or YouTube link>"); return; }
+      setMusicLoading(true);
+      let videoId: string | null = null;
+      let title = input;
+      let thumbnail = "";
+      let duration: string | null = null;
+      try {
+        const res = await fetch(`/api/youtube/resolve?q=${encodeURIComponent(input)}`);
+        if (res.ok) {
+          const data = await res.json();
+          videoId = data.videoId;
+          title = data.title;
+          thumbnail = data.thumbnail ?? "";
+          duration = data.duration ?? null;
+        }
+      } catch {}
+      setMusicLoading(false);
+      if (videoId) {
+        socket.emit("music:add", {
+          channelId, videoId, title, thumbnail, duration,
+          addedBy: session.user.name ?? "Someone",
+          replyAuthor: session.user.name ?? "Someone",
+          replyContent: content,
+        });
+      } else {
+        botNotice(`No results found for "${input}"`);
+      }
+      return;
+    }
+    if (/^\/(skip|next)$/i.test(content)) { setChatInput(""); socket.emit("music:skip", { channelId }); return; }
+    if (/^\/pause$/i.test(content)) { setChatInput(""); socket.emit("music:pause", { channelId }); return; }
+    if (/^\/resume$/i.test(content)) { setChatInput(""); socket.emit("music:resume", { channelId }); return; }
+    if (/^\/stop$/i.test(content)) { setChatInput(""); socket.emit("music:skip", { channelId }); return; }
+
+    setChatInput("");
+    socket.emit("message:send", { channelId, authorId: session.user.id, content });
+  }
 
   useEffect(() => {
     if (!isPushToTalk || !connected) return;
@@ -877,30 +1098,68 @@ export default function VoiceChannel({ channelId }: Props) {
 
   return (
     <div
+      style={{ flex: 1, width: "100%", display: "flex", flexDirection: "row", background: C.bg, position: "relative", overflow: "hidden" }}
+    >
+      {/* Hidden audio-only YouTube player */}
+      {currentSong && !musicPaused && (
+        <iframe
+          key={`${currentSong.videoId}-${musicStartedAt ?? musicPausedAt}`}
+          src={`https://www.youtube.com/embed/${currentSong.videoId}?autoplay=1&start=${musicStartSeconds}&enablejsapi=1`}
+          allow="autoplay; encrypted-media"
+          style={{ position: "absolute", width: "1px", height: "1px", opacity: 0, pointerEvents: "none", top: 0, left: 0 }}
+        />
+      )}
+
+    {/* ── Left: voice tiles + controls ── */}
+    <div
       onMouseEnter={() => setShowControls(true)}
       onMouseLeave={() => setShowControls(false)}
       style={{
-        background: C.bg,
-        borderRadius: 0,
-        border: "none",
-        padding: 14,
-        paddingBottom: 88,
-        position: "relative",
-        flex: 1,
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
+        flex: 1, display: "flex", flexDirection: "column",
+        padding: 14, paddingBottom: 88,
+        position: "relative", minWidth: 0, overflow: "hidden",
       }}
     >
+
+      {/* Top-right chat toggle */}
+      <div style={{ position: "absolute", top: 12, right: 12, zIndex: 40, display: "flex", gap: 6 }}>
+        <button
+          onClick={() => setShowChat((v) => !v)}
+          title={showChat ? "Close chat" : "Open chat"}
+          style={{
+            width: 36, height: 36, borderRadius: 8, border: `1px solid ${C.border}`,
+            background: showChat ? C.accent : C.surface,
+            color: showChat ? "#fff" : C.textDim,
+            cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center",
+            position: "relative", transition: "background 0.15s",
+          }}
+        >
+          💬
+          {!showChat && unreadCount > 0 && (
+            <span style={{
+              position: "absolute", top: -4, right: -4, background: "#ef4444",
+              color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: "50%",
+              width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center",
+            }}>{unreadCount > 9 ? "9+" : unreadCount}</span>
+          )}
+        </button>
+      </div>
+
       {/* Participant tiles — only shown when not screen sharing */}
-      {!hasScreenContent && (
+      {!hasScreenContent && (() => {
+        const botActive = !!currentSong;
+        const totalTiles = 1 + participants.length + (botActive ? 1 : 0);
+        const alone = totalTiles === 1;
+        return (
         <div
           style={{
             display: "flex",
             flexWrap: "wrap",
             gap: 10,
             justifyContent: "center",
-            alignItems: "flex-start",
+            alignItems: alone ? "center" : "flex-start",
+            flex: alone ? 1 : undefined,
+            height: alone ? "100%" : undefined,
           }}
         >
           {/* Self tile */}
@@ -910,8 +1169,9 @@ export default function VoiceChannel({ channelId }: Props) {
               borderRadius: 10,
               border: `1px solid ${C.border}`,
               aspectRatio: "16/9",
-              flex: "1 1 340px",
-              maxWidth: 520,
+              flex: alone ? "0 0 min(72%, 860px)" : "1 1 340px",
+              maxWidth: alone ? "860px" : 520,
+              width: alone ? "min(72%, 860px)" : undefined,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -937,7 +1197,7 @@ export default function VoiceChannel({ channelId }: Props) {
                 }}
               />
             ) : (
-              <Avatar name={session?.user?.name || "You"} />
+              <Avatar name={session?.user?.name || "You"} image={myImage} size={alone ? 110 : 52} />
             )}
             <NameTag>
               {session?.user?.name ?? "You"}{" "}
@@ -990,7 +1250,7 @@ export default function VoiceChannel({ channelId }: Props) {
                     style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
                   />
                 ) : (
-                  <Avatar name={p.userName} />
+                  <Avatar name={p.userName} image={p.userImage} />
                 )}
                 <NameTag>
                   {p.userName} {p.isDeafened ? "🔕" : p.isMuted ? "🔇" : ""}
@@ -998,8 +1258,46 @@ export default function VoiceChannel({ channelId }: Props) {
               </div>
             );
           })}
+
+          {/* Music Bot tile */}
+          {botActive && currentSong && (
+            <div
+              style={{
+                background: "linear-gradient(135deg,#312e81,#1e1b4b)",
+                borderRadius: 10,
+                border: `1px solid ${C.border}`,
+                aspectRatio: "16/9",
+                flex: "1 1 340px",
+                maxWidth: 520,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                position: "relative",
+                overflow: "hidden",
+              }}
+            >
+              <div style={{
+                width: 52, height: 52, borderRadius: "50%",
+                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 22,
+                animation: musicPaused ? "none" : "musicBotPulse 1.6s ease-in-out infinite",
+              }}>🌙</div>
+              <div style={{
+                position: "absolute", top: 10, right: 10,
+                display: "flex", alignItems: "center", gap: 4,
+                background: "rgba(0,0,0,0.4)", borderRadius: 6, padding: "3px 7px",
+              }}>
+                <span style={{ fontSize: 11 }}>{musicPaused ? "⏸" : "🎵"}</span>
+                <span style={{ fontSize: 10, color: "#c7d2fe", fontWeight: 600, maxWidth: 160, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentSong.title}</span>
+              </div>
+              <NameTag>Music Bot 🌙</NameTag>
+              <style>{`@keyframes musicBotPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(139,92,246,0.5); } 50% { box-shadow: 0 0 0 8px rgba(139,92,246,0); } }`}</style>
+            </div>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Screen share area — fills available height; participant tiles float inside */}
       {hasScreenContent && (
@@ -1128,7 +1426,7 @@ export default function VoiceChannel({ channelId }: Props) {
                   }}
                 />
               ) : (
-                <Avatar name={session?.user?.name || "You"} size={28} />
+                <Avatar name={session?.user?.name || "You"} image={myImage} size={28} />
               )}
               <NameTag>
                 {session?.user?.name ?? "You"}{" "}
@@ -1167,7 +1465,7 @@ export default function VoiceChannel({ channelId }: Props) {
                       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
                     />
                   ) : (
-                    <Avatar name={p.userName} size={28} />
+                    <Avatar name={p.userName} image={p.userImage} size={28} />
                   )}
                   <NameTag>
                     {p.userName} {p.isMuted ? "🔇" : ""}
@@ -1345,6 +1643,116 @@ export default function VoiceChannel({ channelId }: Props) {
       </div>
 
       <div ref={audioContainerRef} />
+    </div>{/* end left voice area */}
+
+      {/* ── Chat Panel ── */}
+      {showChat && connected && (
+        <div style={{
+          width: "320px", minWidth: "320px", background: C.surface,
+          borderLeft: `1px solid ${C.border}`,
+          display: "flex", flexDirection: "column",
+          fontFamily: "system-ui, -apple-system, sans-serif",
+          height: "100%",
+        }}>
+          {/* Header */}
+          <div style={{ padding: "14px 16px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+            <span style={{ fontWeight: 700, fontSize: "15px", color: C.textPrimary }}>💬 Chat</span>
+            <button onClick={() => setShowChat(false)} style={{ background: "none", border: "none", color: C.textDim, cursor: "pointer", fontSize: "18px", lineHeight: 1 }}>✕</button>
+          </div>
+
+          {/* Messages */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+            {chatMessages.length === 0 && (
+              <div style={{ textAlign: "center", color: C.textDim, fontSize: "12px", marginTop: "24px" }}>No messages yet. Say hello!</div>
+            )}
+            {chatMessages.map((msg, i) => {
+              if (msg.queueAdd) {
+                const q = msg.queueAdd;
+                const time = new Date(q.timestamp).toLocaleString(undefined, {
+                  month: "2-digit", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true,
+                });
+                return (
+                  <div key={msg.id} style={{ marginTop: "6px" }}>
+                    {/* Reply reference line */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "5px", marginLeft: "38px", marginBottom: "2px", fontSize: "11px", color: C.textDim, overflow: "hidden" }}>
+                      <span style={{ opacity: 0.6 }}>↩</span>
+                      <span style={{ color: C.accent, fontWeight: 600 }}>@{q.replyAuthor}</span>
+                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{q.replyContent}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: "9px", alignItems: "flex-start" }}>
+                      <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", marginTop: "1px" }}>🌙</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "13px", fontWeight: 700, color: C.textPrimary }}>Music Bot</span>
+                          <span style={{
+                            fontSize: "10px", fontWeight: 700, color: "#fff", background: C.accent,
+                            borderRadius: "3px", padding: "1px 5px", display: "inline-flex", alignItems: "center", gap: "2px",
+                          }}>✓ APP</span>
+                          <span style={{ fontSize: "11px", color: C.textDim }}>{time}</span>
+                        </div>
+                        <p style={{ margin: "2px 0 0", fontSize: "13px", color: C.textPrimary, lineHeight: 1.5, wordBreak: "break-word" }}>
+                          🎵🎶 <strong>{q.title}</strong> added to the queue (<span style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: "4px", padding: "0 5px" }}>{q.duration ?? "—:—"}</span>) — at position <strong>{q.position}</strong>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+              const prev = chatMessages[i - 1];
+              const grouped = !prev?.queueAdd && prev?.author?.id === msg.author?.id;
+              const initStr = (msg.author?.name ?? "?").split(" ").map((p: string) => p[0]).join("").slice(0, 2).toUpperCase();
+              return (
+                <div key={msg.id} style={{ display: "flex", gap: "9px", alignItems: "flex-start", marginTop: grouped ? 0 : "4px" }}>
+                  {!grouped ? (
+                    msg.author?.image
+                      ? <img src={msg.author.image} alt="" style={{ width: "30px", height: "30px", borderRadius: "50%", objectFit: "cover", flexShrink: 0, marginTop: "1px" }} />
+                      : <div style={{ width: "30px", height: "30px", borderRadius: "50%", background: C.accentBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", fontWeight: 700, color: C.accent, marginTop: "1px" }}>{initStr}</div>
+                  ) : (
+                    <div style={{ width: "30px", flexShrink: 0 }} />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {!grouped && (
+                      <span style={{ fontSize: "12px", fontWeight: 700, color: C.textPrimary }}>{msg.author?.name ?? "Unknown"}</span>
+                    )}
+                    <p style={{ margin: 0, fontSize: "13px", color: C.textPrimary, lineHeight: 1.5, wordBreak: "break-word" }}>{msg.content}</p>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={chatBottomRef} />
+          </div>
+
+          {/* Input */}
+          <div style={{ padding: "10px 14px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                placeholder="Message… or /play <song name or URL>"
+                style={{
+                  flex: 1, padding: "9px 12px", borderRadius: "8px",
+                  background: C.bg, border: `1px solid ${C.border}`,
+                  color: C.textPrimary, fontSize: "13px", outline: "none",
+                }}
+              />
+              <button
+                onClick={sendChatMessage}
+                disabled={!chatInput.trim()}
+                style={{
+                  width: "36px", height: "36px", borderRadius: "8px", border: "none",
+                  background: chatInput.trim() ? C.accent : C.accentBg,
+                  color: chatInput.trim() ? "#fff" : C.textDim,
+                  cursor: chatInput.trim() ? "pointer" : "default",
+                  fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  transition: "background 0.15s",
+                }}
+              >➤</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
